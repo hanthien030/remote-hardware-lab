@@ -1,0 +1,96 @@
+.sidebar-container {
+  width: 200px;
+  background-color: var(--vscode-bg-sidebar);
+  color: var(--vscode-text-main);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  height: 100vh;
+  border-right: 1px solid var(--vscode-border);
+}
+
+.sidebar-container.collapsed {
+  width: 60px;
+}
+
+.sidebar-header {
+  padding: 15px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--vscode-border);
+}
+
+.toggle-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-text-main);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 5px;
+  margin: 0;
+}
+
+.toggle-btn:hover {
+  color: var(--vscode-accent);
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 18px;
+  color: var(--vscode-text-muted);
+  text-decoration: none;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background-color: var(--vscode-bg-hover);
+  color: var(--vscode-text-main);
+}
+
+.nav-item.active {
+  background-color: var(--vscode-bg-active);
+  color: var(--vscode-text-main);
+  font-weight: 600;
+  border-left: 3px solid var(--vscode-accent);
+}
+
+.nav-item .icon {
+  margin-right: 15px;
+  font-size: 1.2rem;
+}
+
+.sidebar-container.collapsed .nav-item .label {
+  display: none;
+}
+
+.divider {
+  height: 1px;
+  background-color: var(--vscode-border);
+  margin: 10px 15px;
+}
+
+.sidebar-footer {
+  padding-bottom: 10px;
+  border-top: 1px solid var(--vscode-border);
+}
+
+.logout-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+}
+.logout-item:hover {
+  background-color: #3d1a1a;
+  color: var(--vscode-error);
+}

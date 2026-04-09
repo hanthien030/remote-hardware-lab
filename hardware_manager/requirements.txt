@@ -1,0 +1,4 @@
+# file: hardware_manager/requirements.txt
+pyserial
+requests
+python-dotenv

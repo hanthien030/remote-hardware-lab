@@ -1,0 +1,113 @@
+/* CompileLogPanel.css */
+.compile-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.compile-panel {
+  background: #12121d;
+  border: 1px solid #2d2d4a;
+  border-radius: 10px;
+  width: 680px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+.compile-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #2d2d4a;
+}
+
+.compile-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #cdd6f4;
+}
+
+.compile-panel-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.compile-panel-close:hover { color: #cdd6f4; }
+
+.compile-panel-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #0d0d1a;
+  min-height: 300px;
+  max-height: 60vh;
+}
+
+.log-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.log-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+.log-badge.compile { background: #1e3a5f; color: #89b4fa; }
+.log-badge.flash   { background: #3d2060; color: #cba6f7; }
+.log-badge.done    { background: #1a3d2a; color: #a6e3a1; }
+.log-badge.error   { background: #3d1a1a; color: #f38ba8; }
+
+.log-text { color: #cdd6f4; word-break: break-all; }
+.log-line.log-error .log-text { color: #f38ba8; }
+.log-line.log-done  .log-text { color: #a6e3a1; font-weight: 600; }
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.log-cursor { color: #89b4fa; animation: blink 1s infinite; }
+
+.compile-panel-footer {
+  padding: 12px 18px;
+  border-top: 1px solid #2d2d4a;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.compile-retry-btn, .compile-close-btn {
+  padding: 7px 18px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+}
+.compile-retry-btn {
+  background: #2d2d4a;
+  color: #89b4fa;
+}
+.compile-retry-btn:hover { background: #3d3d6a; }
+.compile-close-btn {
+  background: #1a3d2a;
+  color: #a6e3a1;
+}
+.compile-close-btn:hover { background: #2a5a3a; }

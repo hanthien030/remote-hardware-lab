@@ -1,0 +1,6 @@
+# file: broker/requirements.txt
+fastapi
+uvicorn[standard]
+pydantic
+pyserial
+esptool

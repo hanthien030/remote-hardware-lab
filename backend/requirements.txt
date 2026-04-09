@@ -1,0 +1,12 @@
+# file: backend/requirements.txt
+Flask
+Flask-CORS
+flask-socketio
+eventlet
+mysql-connector-python
+python-dotenv
+PyJWT
+bcrypt
+Werkzeug
+docker
+requests

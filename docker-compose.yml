@@ -1,0 +1,124 @@
+services:
+  # Service Cơ sở dữ liệu MySQL
+  database:
+    image: mysql:8.0
+    container_name: mysql_db
+    # Docker Compose sẽ tự động tìm và đọc file .env ở thư mục gốc
+    # và thay thế các biến ${...} dưới đây
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3306:3306"
+    restart: unless-stopped
+    # === THÊM KHỐI LỆNH NÀY VÀO ===
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend_network
+    # ================================
+
+
+  # Service Backend (Flask API)
+  backend:
+    build: ./backend
+    container_name: backend_service
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./QUANLYUSER:/remotelab/userdata
+      - workspaces_data:/workspaces
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - COMPILER_URL=http://compiler:9000
+    restart: unless-stopped
+    networks:
+      - backend_network
+
+  # Service Frontend (Nginx Static Files)
+  frontend:
+    build: ./frontend
+    container_name: frontend_service
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    networks:
+      - backend_network
+  # Service Nginx (Reverse Proxy)
+  nginx:
+    image: nginx:latest
+    container_name: nginx_proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - backend_network
+  # Service Hardware Manager (Listener)
+  hardware_manager:
+    build: ./hardware_manager
+    container_name: hardware_manager_service
+    depends_on:
+      - backend
+    # Cho phép container truy cập vào các thiết bị của máy chủ
+    privileged: true 
+    volumes:
+      # Mount thư mục thiết bị để pyserial có thể quét
+      - /dev:/dev
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - backend_network
+ # Service Hardware Access Broker
+  broker:
+    build: ./broker
+    container_name: broker_service
+    volumes:
+      - ./broker/app:/code/app
+      - /dev:/dev
+    privileged: true
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthcheck')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - backend_network
+# Service Compiler (Arduino CLI)
+  compiler:
+    build: ./compiler
+    container_name: compiler_service
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    networks:
+      - backend_network
+
+# Định nghĩa network để các service giao tiếp với nhau
+networks:
+  backend_network:
+    driver: bridge
+volumes:
+  mysql_data:
+  workspaces_data:

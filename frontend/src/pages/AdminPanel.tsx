@@ -1,0 +1,522 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { adminHardwareAPI, adminUserAPI } from '../api';
+import { useAuthStore } from '../store/authStore';
+import '../styles/Admin.css';
+
+type UsageMode = 'free' | 'share' | 'block';
+
+interface DeviceAssignment {
+  user_id: string;
+  expires_at: string | null;
+}
+
+interface Device {
+  tag_name: string;
+  device_name: string | null;
+  type: string;
+  port: string | null;
+  status: string;
+  usage_mode: UsageMode;
+  assigned_to: string | null;
+  assignments: DeviceAssignment[];
+  locked_by_user: string | null;
+}
+
+interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+}
+
+interface EditModalState {
+  open: boolean;
+  device: Device | null;
+  deviceNameInput: string;
+}
+
+interface SharePanelState {
+  open: boolean;
+  device: Device | null;
+}
+
+const usageModeLabel = (mode: UsageMode) => {
+  if (mode === 'share') return 'Share';
+  if (mode === 'block') return 'Block';
+  return 'Free';
+};
+
+const formatExpiry = (value: string | null) => {
+  if (!value) return 'No expiry';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+};
+
+export const AdminPanel: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'devices' | 'users'>('devices');
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [usageSavingTag, setUsageSavingTag] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareUserId, setShareUserId] = useState('');
+  const [shareExpiresAt, setShareExpiresAt] = useState('');
+
+  const [editModal, setEditModal] = useState<EditModalState>({ open: false, device: null, deviceNameInput: '' });
+  const [editLoading, setEditLoading] = useState(false);
+  const [sharePanel, setSharePanel] = useState<SharePanelState>({ open: false, device: null });
+
+  const navigate = useNavigate();
+  const logout = useAuthStore((state) => state.logout);
+  const currentUser = useAuthStore((state) => state.user);
+
+  useEffect(() => {
+    if (activeTab === 'devices') {
+      void fetchDevices();
+      void ensureUsersLoaded();
+    } else {
+      void fetchUsers();
+    }
+  }, [activeTab]);
+
+  const showSuccess = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const fetchDevices = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await adminHardwareAPI.listAllDevices();
+      const nextDevices = (response.data.devices || []) as Device[];
+      setDevices(nextDevices);
+      setSharePanel((prev) => {
+        if (!prev.device) return prev;
+        const refreshed = nextDevices.find((device) => device.tag_name === prev.device?.tag_name) || null;
+        if (!refreshed) {
+          return { open: false, device: null };
+        }
+        return { ...prev, device: refreshed };
+      });
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to fetch devices');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await adminUserAPI.listAllUsers();
+      setUsers(response.data.users || []);
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to fetch users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ensureUsersLoaded = async () => {
+    if (users.length > 0) return;
+    try {
+      const response = await adminUserAPI.listAllUsers();
+      setUsers(response.data.users || []);
+    } catch {
+      // Device management can still work even if user list refresh fails.
+    }
+  };
+
+  const shareableUsers = useMemo(
+    () => users.filter((user) => user.role !== 'admin'),
+    [users]
+  );
+
+  const openEditModal = (device: Device) => {
+    setEditModal({ open: true, device, deviceNameInput: device.device_name || '' });
+  };
+
+  const openSharePanel = async (device: Device) => {
+    await ensureUsersLoaded();
+    setSharePanel({ open: true, device });
+    setShareUserId('');
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    setShareExpiresAt(d.toISOString().slice(0, 10));
+  };
+
+  const handleUsageModeChange = async (device: Device, nextMode: UsageMode) => {
+    if (device.usage_mode === nextMode) return;
+
+    setUsageSavingTag(device.tag_name);
+    setError('');
+    try {
+      await adminHardwareAPI.updateDevice(device.tag_name, {
+        tag_name: device.tag_name,
+        device_name: device.device_name,
+        usage_mode: nextMode,
+      });
+      showSuccess(`Updated ${device.tag_name} to ${usageModeLabel(nextMode)} mode.`);
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to update device usage mode');
+    } finally {
+      setUsageSavingTag(null);
+    }
+  };
+
+  const handleAssignShare = async () => {
+    if (!sharePanel.device || !shareUserId.trim()) return;
+
+    setShareLoading(true);
+    setError('');
+    try {
+      await adminHardwareAPI.assignDevice(
+        sharePanel.device.tag_name,
+        shareUserId.trim(),
+        `${shareExpiresAt} 23:59:59`
+      );
+      showSuccess(`Shared ${sharePanel.device.tag_name} with ${shareUserId.trim()}.`);
+      setShareUserId('');
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to share device');
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleRevokeShare = async (tagName: string, userId: string) => {
+    if (!window.confirm(`Revoke ${userId} from ${tagName}?`)) return;
+
+    setShareLoading(true);
+    setError('');
+    try {
+      await adminHardwareAPI.revokeAssignment(tagName, userId);
+      showSuccess(`Revoked ${userId} from ${tagName}.`);
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to revoke shared user');
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!editModal.device) return;
+
+    setEditLoading(true);
+    setError('');
+    try {
+      await adminHardwareAPI.updateDevice(editModal.device.tag_name, {
+        tag_name: editModal.device.tag_name,
+        device_name: editModal.deviceNameInput,
+        usage_mode: editModal.device.usage_mode,
+      });
+      showSuccess(`Updated device name for ${editModal.device.tag_name}.`);
+      setEditModal({ open: false, device: null, deviceNameInput: '' });
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to update device');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (username === currentUser?.username) {
+      alert('Cannot delete your own account.');
+      return;
+    }
+    if (!window.confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+    try {
+      await adminUserAPI.deleteUser(userId);
+      showSuccess(`Deleted user "${username}".`);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete user');
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="admin-panel">
+      <nav className="admin-tabs">
+        <button className={`tab ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => setActiveTab('devices')}>
+          Devices
+        </button>
+        <button className={`tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
+          Users
+        </button>
+      </nav>
+
+      <main className="admin-content">
+        {error && <div className="error-message">❌ {error}</div>}
+        {successMsg && <div className="success-message">{successMsg}</div>}
+
+        {loading ? (
+          <div className="loading">Loading...</div>
+        ) : activeTab === 'devices' ? (
+          <div className="devices-section">
+            <div className="devices-toolbar">
+              <div>
+                <h2>Device Management</h2>
+                <p>Set each device to Free, Share, or Block, then manage sharing only when the device is in Share mode.</p>
+              </div>
+            </div>
+
+            {devices.length === 0 ? (
+              <div className="empty-state">No devices found</div>
+            ) : (
+              <div className="device-layout">
+                <div className="device-list-card">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Tag Name</th>
+                        <th>Device Name</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Usage Mode</th>
+                        <th>Share</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device) => {
+                        const isShareMode = device.usage_mode === 'share';
+                        return (
+                          <tr key={device.tag_name}>
+                            <td>
+                              <strong>{device.tag_name}</strong>
+                              <div className="device-subline">{device.port || 'No port'}</div>
+                            </td>
+                            <td>{device.device_name || <span className="muted-text">—</span>}</td>
+                            <td><code>{device.type}</code></td>
+                            <td>
+                              <span className={`status ${device.status}`}>{device.status}</span>
+                            </td>
+                            <td>
+                              <div className="usage-mode-cell">
+                                <span className={`usage-badge usage-${device.usage_mode}`}>{usageModeLabel(device.usage_mode)}</span>
+                                <select
+                                  value={device.usage_mode}
+                                  onChange={(event) => handleUsageModeChange(device, event.target.value as UsageMode)}
+                                  disabled={usageSavingTag === device.tag_name}
+                                  className="usage-select"
+                                >
+                                  <option value="free">Free</option>
+                                  <option value="share">Share</option>
+                                  <option value="block">Block</option>
+                                </select>
+                              </div>
+                            </td>
+                            <td>
+                              {isShareMode ? (
+                                <div className="share-summary">
+                                  <div>{device.assignments.length} shared user{device.assignments.length === 1 ? '' : 's'}</div>
+                                  <button
+                                    className="btn-secondary"
+                                    onClick={() => openSharePanel(device)}
+                                  >
+                                    Manage share
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="muted-text">
+                                  {device.usage_mode === 'free' ? 'Open to all users' : 'Blocked from queue use'}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                className="btn-secondary"
+                                onClick={() => openEditModal(device)}
+                              >
+                                Edit name
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <aside className="share-panel-card">
+                  {sharePanel.open && sharePanel.device ? (
+                    <>
+                      <div className="share-panel-header">
+                        <div>
+                          <h3>Share Management</h3>
+                          <p>{sharePanel.device.tag_name}</p>
+                        </div>
+                        <button
+                          className="btn-secondary"
+                          onClick={() => setSharePanel({ open: false, device: null })}
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      {sharePanel.device.usage_mode !== 'share' ? (
+                        <div className="share-panel-empty">
+                          This device is not in Share mode. Set its usage mode to Share to manage user access.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="share-panel-section">
+                            <h4>Currently shared users</h4>
+                            {sharePanel.device.assignments.length === 0 ? (
+                              <div className="share-panel-empty">No active shared users yet.</div>
+                            ) : (
+                              <div className="share-assignment-list">
+                                {sharePanel.device.assignments.map((assignment) => (
+                                  <div key={`${sharePanel.device?.tag_name}-${assignment.user_id}`} className="share-assignment-row">
+                                    <div>
+                                      <strong>{assignment.user_id}</strong>
+                                      <div className="device-subline">Expires: {formatExpiry(assignment.expires_at)}</div>
+                                    </div>
+                                    <button
+                                      className="btn-danger"
+                                      onClick={() => handleRevokeShare(sharePanel.device!.tag_name, assignment.user_id)}
+                                      disabled={shareLoading}
+                                    >
+                                      Revoke
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="share-panel-section">
+                            <h4>Add shared user</h4>
+                            <label className="share-form-label">
+                              User
+                              <select
+                                value={shareUserId}
+                                onChange={(event) => setShareUserId(event.target.value)}
+                                className="usage-select"
+                              >
+                                <option value="">Select a user</option>
+                                {shareableUsers.map((user) => (
+                                  <option key={user.id} value={user.username}>
+                                    {user.username} ({user.email})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="share-form-label">
+                              Expiry
+                              <input
+                                type="date"
+                                value={shareExpiresAt}
+                                onChange={(event) => setShareExpiresAt(event.target.value)}
+                                className="share-date-input"
+                              />
+                            </label>
+                            <button
+                              className="btn-primary"
+                              onClick={handleAssignShare}
+                              disabled={shareLoading || !shareUserId || !shareExpiresAt}
+                            >
+                              {shareLoading ? 'Saving...' : 'Add shared user'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <div className="share-panel-empty">
+                      Select “Manage share” on a Share-mode device to see current shared users, add an expiry, or revoke access.
+                    </div>
+                  )}
+                </aside>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="users-section">
+            <h2>All Users ({users.length})</h2>
+            {users.length === 0 ? (
+              <div className="empty-state">No users found</div>
+            ) : (
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr key={user.id}>
+                      <td>
+                        {user.username}
+                        {user.username === currentUser?.username && (
+                          <span className="badge-self"> (You)</span>
+                        )}
+                      </td>
+                      <td>{user.email}</td>
+                      <td><span className={`role ${user.role}`}>{user.role}</span></td>
+                      <td>
+                        <button
+                          className="btn-danger"
+                          onClick={() => handleDeleteUser(user.id, user.username)}
+                          disabled={user.username === currentUser?.username}
+                          title={user.username === currentUser?.username ? 'Cannot delete yourself' : 'Delete user'}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </main>
+
+      {editModal.open && editModal.device && (
+        <div className="modal-overlay" onClick={() => setEditModal({ open: false, device: null, deviceNameInput: '' })}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit Device</h3>
+            <p><strong>Tag:</strong> {editModal.device.tag_name} | <strong>Type:</strong> {editModal.device.type}</p>
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label>Friendly Name (device_name):</label>
+              <input
+                type="text"
+                value={editModal.deviceNameInput}
+                onChange={(e) => setEditModal((prev) => ({ ...prev, deviceNameInput: e.target.value }))}
+                placeholder="e.g. Lab ESP32 Board #1"
+                style={{ width: '100%', padding: '8px', marginTop: 4 }}
+              />
+            </div>
+            <div className="modal-actions" style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+              <button className="btn-secondary" onClick={() => setEditModal({ open: false, device: null, deviceNameInput: '' })}>
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={handleEditSave} disabled={editLoading}>
+                {editLoading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

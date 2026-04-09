@@ -1,0 +1,148 @@
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --vscode-bg-sidebar: #252526;
+  --vscode-bg-editor: #1e1e1e;
+  --vscode-bg-tabbar: #2d2d2d;
+  --vscode-bg-panel: #1e1e1e;
+  --vscode-bg-hover: #2a2d2e;
+  --vscode-bg-active: #37373d;
+  --vscode-border: #3c3c3c;
+  --vscode-text-main: #d4d4d4;
+  --vscode-text-muted: #858585;
+  --vscode-accent: #007acc;
+  --vscode-accent-hover: #005f9e;
+  --vscode-error: #f14c4c;
+  --vscode-success: #89d185;
+}
+
+[data-theme='light'] {
+  --vscode-bg-sidebar: #f3f3f3;
+  --vscode-bg-editor: #ffffff;
+  --vscode-bg-tabbar: #ececec;
+  --vscode-bg-panel: #ffffff;
+  --vscode-bg-hover: #e8e8e8;
+  --vscode-bg-active: #e4e6f1;
+  --vscode-border: #cccccc;
+  --vscode-text-main: #333333;
+  --vscode-text-muted: #767676;
+  --vscode-accent: #007acc;
+  --vscode-accent-hover: #005f9e;
+  --vscode-error: #e51400;
+  --vscode-success: #1e7145;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--vscode-bg-editor);
+  color: var(--vscode-text-main);
+}
+
+a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+input[type='text'],
+input[type='email'],
+input[type='password'],
+textarea,
+select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.3s ease;
+}
+
+input[type='text']:focus,
+input[type='email']:focus,
+input[type='password']:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #0056b3;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #545b62;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+}
+
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border: 1px solid #f5c6cb;
+}
+
+.success-message {
+  background-color: #d4edda;
+  color: #155724;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border: 1px solid #c3e6cb;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 16px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+  font-size: 16px;
+}

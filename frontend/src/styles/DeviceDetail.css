@@ -1,0 +1,291 @@
+.device-detail-page {
+  min-height: 100vh;
+  background: var(--vscode-bg-editor);
+  color: var(--vscode-text-main);
+  padding-bottom: 20px;
+}
+
+.detail-header {
+  background: var(--vscode-bg-tabbar);
+  border-bottom: 1px solid var(--vscode-border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.btn-back {
+  background: var(--vscode-bg-hover);
+  color: var(--vscode-text-main);
+  border: 1px solid var(--vscode-border);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background: var(--vscode-bg-active);
+}
+
+.detail-header h1 {
+  margin: 0;
+  flex: 1;
+  color: var(--vscode-text-main);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.header-spacer {
+  width: 100px;
+}
+
+.detail-container {
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 55px);
+  padding: 0;
+  margin: 0;
+}
+
+.detail-sidebar {
+  width: 280px;
+  background: var(--vscode-bg-sidebar);
+  border-right: 1px solid var(--vscode-border);
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.info-card {
+  background: transparent;
+  padding: 0 0 16px 0;
+  color: var(--vscode-text-main);
+}
+
+.info-card h3 {
+  margin: 0 0 10px 0;
+  color: var(--vscode-text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--vscode-border);
+  padding-bottom: 6px;
+  font-weight: 600;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.info-row .label {
+  color: var(--vscode-text-muted);
+}
+
+.info-row .value {
+  color: var(--vscode-text-main);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-badge.connected {
+  background: rgba(137, 209, 133, 0.2);
+  color: var(--vscode-success);
+}
+
+.status-badge.disconnected {
+  background: rgba(241, 76, 76, 0.2);
+  color: var(--vscode-error);
+}
+
+.lock-status-card {
+  background: var(--vscode-bg-panel);
+  border: 1px solid var(--vscode-border);
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border-left: 3px solid;
+  margin-bottom: 15px;
+}
+
+.lock-status-card.locked {
+  border-left-color: #cca700;
+}
+
+.lock-status-card.unlocked {
+  border-left-color: var(--vscode-success);
+}
+
+.lock-icon {
+  font-size: 20px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.lock-text {
+  flex: 1;
+}
+
+.lock-title {
+  font-weight: 600;
+  color: var(--vscode-text-main);
+  font-size: 13px;
+}
+
+.lock-detail {
+  font-size: 11px;
+  color: var(--vscode-text-muted);
+  margin-top: 2px;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.btn-action {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 3px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 13px;
+}
+
+.btn-flash {
+  background: var(--vscode-accent);
+  color: white;
+}
+.btn-flash:hover:not(:disabled) {
+  background: var(--vscode-accent-hover);
+}
+
+.btn-lock {
+  background: var(--vscode-success);
+  color: #1e1e1e;
+}
+
+.btn-unlock {
+  background: #cca700;
+  color: #1e1e1e;
+}
+
+.btn-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quick-stats {
+  padding: 15px 0 0 0;
+  border-top: 1px solid var(--vscode-border);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.stat-label {
+  color: var(--vscode-text-muted);
+  font-size: 12px;
+}
+
+.stat-value {
+  color: var(--vscode-text-main);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+
+.detail-main {
+  display: flex;
+  flex-direction: row; /* allow FileTree to be side-by-side with Editor */
+  flex: 1;
+  background: var(--vscode-bg-editor);
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.editor-title-bar {
+  background: var(--vscode-bg-tabbar);
+  color: var(--vscode-text-main);
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 0;
+  border-bottom: 1px solid var(--vscode-border);
+}
+
+.editor-title-bar h3 {
+  background: var(--vscode-bg-editor);
+  padding: 8px 16px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  border-top: 1px solid var(--vscode-accent);
+  color: var(--vscode-text-main);
+}
+
+.editor-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--vscode-accent);
+  color: white;
+  font-size: 12px;
+}
+
+.editor-info {
+  font-size: 12px;
+}
+
+.btn-compile {
+  background: transparent;
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-compile:hover {
+  background: rgba(255,255,255,0.2);
+}
+.btn-compile:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
