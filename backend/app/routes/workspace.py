@@ -363,7 +363,7 @@ def compile_project(project_name: str):
     SSE stream compile log from compiler service.
     Body: {"board": "esp32"}   (optional, default esp32)
     Proxies to compiler service /compile-stream, streams back to client.
-    On success: saves .bin into /workspaces/{user}/{project}/build/
+    On success: saves the board-specific firmware artifact into /workspaces/{user}/{project}/build/
     """
     username = request.current_user['username']
     data = request.get_json() or {}
@@ -400,8 +400,10 @@ def compile_project(project_name: str):
                 timeout=300
             )
 
-            bin_b64 = None
-            bin_filename = 'firmware.bin'
+            artifact_b64 = None
+            artifact_filename = None
+            artifact_ext = None
+            flash_tool_hint = None
             flash_layout = None
 
             for chunk in resp.iter_lines(chunk_size=None):
@@ -412,30 +414,35 @@ def compile_project(project_name: str):
                 line = chunk if isinstance(chunk, str) else chunk.decode('utf-8')
                 yield line + '\n\n'
 
-                # Parse to detect done event and save .bin
+                # Parse the compiler completion event and persist the saved artifact after the stream closes.
                 if line.startswith('data: '):
                     try:
                         evt = json.loads(line[6:])
-                        if evt.get('stage') == 'done' and evt.get('bin_base64'):
-                            bin_b64 = evt['bin_base64']
-                            bin_filename = evt.get('bin_filename', 'firmware.bin')
+                        if evt.get('stage') == 'done':
+                            artifact_b64 = evt.get('artifact_base64') or evt.get('bin_base64')
+                            artifact_filename = evt.get('artifact_filename') or evt.get('bin_filename')
+                            artifact_ext = evt.get('artifact_ext')
+                            flash_tool_hint = evt.get('flash_tool_hint')
                             flash_layout = evt.get('flash_layout')
                     except Exception:
                         pass
 
-            # After stream ends — save .bin to workspace
-            if bin_b64:
+            # After stream ends — save the board-specific firmware artifact to the workspace.
+            if artifact_b64 and artifact_filename:
                 import base64
                 os.makedirs(build_dir, exist_ok=True)
                 # Clean old artifacts first
                 import glob
                 for old in glob.glob(os.path.join(build_dir, '*.bin')):
                     os.remove(old)
+                for old in glob.glob(os.path.join(build_dir, '*.hex')):
+                    os.remove(old)
                 for old in glob.glob(os.path.join(build_dir, '*.flash.json')):
                     os.remove(old)
-                bin_path = os.path.join(build_dir, bin_filename)
-                with open(bin_path, 'wb') as bf:
-                    bf.write(base64.b64decode(bin_b64))
+                artifact_basename = os.path.basename(artifact_filename)
+                artifact_path = os.path.join(build_dir, artifact_basename)
+                with open(artifact_path, 'wb') as artifact_file:
+                    artifact_file.write(base64.b64decode(artifact_b64))
 
                 manifest_rel = None
                 if flash_layout and isinstance(flash_layout.get('segments'), list):
@@ -446,8 +453,8 @@ def compile_project(project_name: str):
                         if not segment_filename or not segment_offset:
                             continue
 
-                        if segment_filename == bin_filename:
-                            segment_path = bin_path
+                        if segment_filename == artifact_basename:
+                            segment_path = artifact_path
                         else:
                             segment_b64 = segment.get('base64')
                             if not segment_b64:
@@ -462,7 +469,7 @@ def compile_project(project_name: str):
                         })
 
                     if manifest_segments:
-                        manifest_filename = f'{os.path.splitext(bin_filename)[0]}.flash.json'
+                        manifest_filename = f'{os.path.splitext(artifact_basename)[0]}.flash.json'
                         manifest_path = os.path.join(build_dir, manifest_filename)
                         with open(manifest_path, 'w', encoding='utf-8') as mf:
                             json.dump({
@@ -476,12 +483,24 @@ def compile_project(project_name: str):
                         manifest_rel = f'build/{manifest_filename}'
 
                 # Emit final marker for frontend
-                saved_rel = f'build/{bin_filename}'
-                saved_evt = json.dumps({'stage': 'saved', 'path': saved_rel,
-                                        'log': f'Binary saved to {saved_rel}'})
+                saved_rel = f'build/{artifact_basename}'
+                saved_evt = json.dumps({
+                    'stage': 'saved',
+                    'path': saved_rel,
+                    'artifact_ext': artifact_ext or os.path.splitext(saved_rel)[1].lower(),
+                    'flash_tool_hint': flash_tool_hint,
+                    'log': f'Firmware artifact saved to {saved_rel}',
+                })
                 yield f'data: {saved_evt}\n\n'
                 log_action(username, 'Compile Project',
-                           details={'project': project_name, 'board': board, 'bin': saved_rel, 'flash_manifest': manifest_rel})
+                           details={
+                               'project': project_name,
+                               'board': board,
+                               'artifact': saved_rel,
+                               'artifact_ext': artifact_ext or os.path.splitext(saved_rel)[1].lower(),
+                               'flash_tool_hint': flash_tool_hint,
+                               'flash_manifest': manifest_rel,
+                           })
 
         except http_requests.exceptions.ConnectionError:
             err = json.dumps({'stage': 'error', 'error': 'Cannot reach compiler service'})
