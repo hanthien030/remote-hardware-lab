@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import { CodeEditor, type CompileEditorMarker } from '../components/CodeEditor';
-import { CompilePanel } from '../components/CompilePanel';
+import { CompilePanel, type CompileSavedArtifact } from '../components/CompilePanel';
 import { FileTree } from '../components/FileTree';
 import { FlashDialog } from '../components/FlashDialog';
 import { ToastContainer } from '../components/ToastContainer';
@@ -30,7 +30,7 @@ export const ProjectWorkspace: React.FC = () => {
   const [selectedBoard, setSelectedBoard] = useState<string>(
     () => localStorage.getItem('rhl_selected_board') || 'esp32'
   );
-  const [lastBinPath, setLastBinPath] = useState<string | null>(null);
+  const [lastCompileArtifact, setLastCompileArtifact] = useState<CompileSavedArtifact | null>(null);
   const [activeRequest, setActiveRequest] = useState<FlashQueueRequest | null>(null);
   const [activeRequestLoading, setActiveRequestLoading] = useState(false);
   const [cancellingActiveRequest, setCancellingActiveRequest] = useState(false);
@@ -89,7 +89,7 @@ export const ProjectWorkspace: React.FC = () => {
     setFileContents({});
     setDirtyFiles({});
     setCompileMarkers({});
-    setLastBinPath(null);
+    setLastCompileArtifact(null);
     fetchProjects();
     fetchActiveRequest();
   }, [fetchActiveRequest, fetchProjects, projectName]);
@@ -250,9 +250,9 @@ export const ProjectWorkspace: React.FC = () => {
     });
   };
 
-  const handleCompileSaved = useCallback((binPath: string) => {
-    setLastBinPath(binPath);
-    showToast(`Compile succeeded. Binary: ${binPath}`, 'success');
+  const handleCompileSaved = useCallback((artifact: CompileSavedArtifact) => {
+    setLastCompileArtifact(artifact);
+    showToast(`Compile succeeded. Saved artifact: ${artifact.path}`, 'success');
   }, [showToast]);
 
   const handleCancelActiveRequest = useCallback(async () => {
@@ -296,17 +296,27 @@ export const ProjectWorkspace: React.FC = () => {
   const hasActiveRequest = Boolean(activeRequest);
   const isWaitingRequest = activeRequest?.status === 'waiting';
   const isFlashingRequest = activeRequest?.status === 'flashing';
-  const canOpenFlashDialog = Boolean(lastBinPath) && !hasActiveRequest;
+  const boardSupportsQueueFlash = selectedBoard === 'esp32' || selectedBoard === 'esp8266';
+  const compiledArtifactMatchesBoard = Boolean(
+    lastCompileArtifact?.path && lastCompileArtifact.board === selectedBoard
+  );
+  const hasCompileArtifactReady = Boolean(lastCompileArtifact?.path) && compiledArtifactMatchesBoard;
+  const isCompileOnlyBoard = hasCompileArtifactReady && !boardSupportsQueueFlash;
+  const canOpenFlashDialog = hasCompileArtifactReady && boardSupportsQueueFlash && !hasActiveRequest;
   const workspaceActionLabel = hasActiveRequest ? '⬛ HỦY' : '⚡ Nạp';
   const workspaceActionDisabled = activeRequestLoading
     || cancellingActiveRequest
     || isFlashingRequest
-    || (!hasActiveRequest && !lastBinPath);
+    || (!hasActiveRequest && !canOpenFlashDialog);
   const workspaceActionTitle = hasActiveRequest
     ? isWaitingRequest
       ? 'Cancel the current waiting flash request'
       : 'The request is already flashing. Open /history to follow progress'
-    : lastBinPath
+    : !compiledArtifactMatchesBoard
+      ? `Compile successfully for ${selectedBoard} before sending a flash request`
+    : isCompileOnlyBoard
+      ? 'Arduino Uno compile is ready, but flashing will be added later via avrdude'
+    : hasCompileArtifactReady
       ? 'Send the compiled firmware into the flash queue'
       : 'Compile successfully before sending a flash request';
   const workspaceActionStyle: React.CSSProperties = hasActiveRequest
@@ -548,6 +558,32 @@ export const ProjectWorkspace: React.FC = () => {
                     </div>
                   )}
 
+                  {!activeRequest && isCompileOnlyBoard && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(59, 130, 246, 0.35)',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        color: 'var(--vscode-text-main)',
+                      }}
+                    >
+                      <div style={{ display: 'grid', gap: 4 }}>
+                        <div style={{ fontSize: 12, textTransform: 'uppercase', fontWeight: 700, color: '#93c5fd' }}>
+                          Compile-only board
+                        </div>
+                        <div style={{ fontSize: 13 }}>
+                          Arduino Uno compile succeeded and saved <strong>{lastCompileArtifact?.path}</strong>. Flashing stays disabled in this batch and will be added later via avrdude.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                     <div className="editor-info">C++ syntax for ESP32/Arduino</div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -643,11 +679,11 @@ export const ProjectWorkspace: React.FC = () => {
         />
       )}
 
-      {projectName && lastBinPath && (
+      {projectName && lastCompileArtifact?.path && canOpenFlashDialog && (
         <FlashDialog
           isOpen={showFlashDialog}
           projectName={projectName}
-          firmwarePath={lastBinPath}
+          firmwarePath={lastCompileArtifact.path}
           initialBoard={selectedBoard}
           onClose={() => setShowFlashDialog(false)}
           onQueued={(request, board) => {

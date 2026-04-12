@@ -11,6 +11,15 @@ interface LogLine {
   error?: string;
   size_bytes?: number;
   path?: string;
+  artifact_ext?: string;
+  flash_tool_hint?: string;
+}
+
+export interface CompileSavedArtifact {
+  path: string;
+  artifactExt?: string;
+  flashToolHint?: string;
+  board: string;
 }
 
 interface CompilePanelProps {
@@ -18,7 +27,7 @@ interface CompilePanelProps {
   board: string;
   isOpen: boolean;
   onClose: () => void;
-  onSaved?: (binPath: string) => void;
+  onSaved?: (artifact: CompileSavedArtifact) => void;
   onMarkersChange?: (markersByFile: Record<string, CompileEditorMarker[]>) => void;
   token: string;
 }
@@ -290,7 +299,12 @@ export const CompilePanel: React.FC<CompilePanelProps> = ({
             onMarkersChangeRef.current?.({});
           } else if (event.stage === 'saved' && event.path) {
             if (!isRunActive(runId)) return;
-            onSavedRef.current?.(event.path);
+            onSavedRef.current?.({
+              path: event.path,
+              artifactExt: event.artifact_ext,
+              flashToolHint: event.flash_tool_hint,
+              board: runConfig.board,
+            });
           } else if (event.stage === 'error') {
             if (!isRunActive(runId)) return;
             setStatus('error');
