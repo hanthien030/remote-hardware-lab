@@ -409,16 +409,16 @@ Chỉ trả về:
 - [x] Retest: flash với baud 9600 và 115200, kiểm tra log đúng
 
 #### Batch 1 wrap-up
-- [ ] Manual retest toàn bộ Batch 1 completed
-- [ ] Xóa instrumentation logging tạm thời (nếu đã thêm)
+- [x] Manual retest toàn bộ Batch 1 completed
+- [x] Xóa instrumentation logging tạm thời (nếu đã thêm)
 
 ---
 
 ### Batch 2 — Board-aware intake & pending review
 
 #### Schema & backend
-- [ ] Thêm `board_class` và `review_state` vào bảng `devices`
-- [ ] Logic: device mới phát hiện → `usage_mode = block`, `review_state = pending_review`
+- [x] Thêm `board_class` và `review_state` vào bảng `devices`
+- [x] Logic: device mới phát hiện → `usage_mode = block`, `review_state = pending_review`
 - [ ] API: GET pending devices (admin only)
 - [ ] API: POST classify device (name + board_class → approved)
 

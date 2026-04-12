@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS `devices` (
   `device_name` VARCHAR(255) NULL,
   `status` ENUM('connected','disconnected') NOT NULL DEFAULT 'disconnected',
   `usage_mode` ENUM('free','share','block') NOT NULL DEFAULT 'free',
+  `board_class` ENUM('esp32','esp8266','arduino_uno') DEFAULT NULL,
+  `review_state` ENUM('pending_review','approved') NOT NULL DEFAULT 'pending_review',
   -- ==============(LOCK)_==============
   `is_virtualized` BOOLEAN NOT NULL DEFAULT FALSE,
   `locked_by_user` VARCHAR(50) NULL,

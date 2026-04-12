@@ -116,13 +116,14 @@ def handle_device_connect(port, vendor_id, product_id, serial_number):
             sql_insert = """
                 INSERT INTO devices (
                     port, serial_number, mac_address, type, tag_name, 
-                    vendor_id, product_id, is_virtualized, status, last_seen
+                    vendor_id, product_id, is_virtualized, status, usage_mode,
+                    board_class, review_state, last_seen
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'connected', NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'connected', 'block', %s, 'pending_review', NOW())
             """
             cursor.execute(sql_insert, (
                 port, serial_number, mac_address, device_type, 
-                tag_name, vendor_id, product_id, is_virtualized
+                tag_name, vendor_id, product_id, is_virtualized, None
             ))
             db.commit()
             

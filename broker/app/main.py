@@ -212,16 +212,10 @@ def flash_non_virtualized_layout(request: FlashRequest):
 def _serial_capture_stream(request: SerialCaptureRequest):
     connection = None
     bytes_captured = 0
-    chunk_index = 0
 
     try:
         duration_seconds = max(1, min(int(request.duration_seconds), 300))
         baud_rate = int(request.baud_rate or 115200)
-        print(
-            f'[BROKER][SERIAL_DEBUG] serial_capture_request ts={time.time():.3f} '
-            f'port={request.port} baud={baud_rate} duration={duration_seconds}',
-            flush=True,
-        )
 
         connection = serial.Serial()
         connection.port = request.port
@@ -233,11 +227,6 @@ def _serial_capture_stream(request: SerialCaptureRequest):
         connection.open()
         connection.dtr = False
         connection.rts = False
-        print(
-            f'[BROKER][SERIAL_DEBUG] serial_open_success ts={time.time():.3f} '
-            f'port={request.port} baud={baud_rate} is_open={connection.is_open}',
-            flush=True,
-        )
         connection.reset_input_buffer()
         connection.reset_output_buffer()
 
@@ -260,35 +249,17 @@ def _serial_capture_stream(request: SerialCaptureRequest):
                 continue
 
             bytes_captured += len(chunk)
-            chunk_index += 1
-            if chunk_index <= 3:
-                print(
-                    f'[BROKER][SERIAL_DEBUG] serial_chunk ts={time.time():.3f} '
-                    f'port={request.port} chunk_index={chunk_index} raw_len={len(chunk)} '
-                    f'raw_hex={chunk[:16].hex()} decoded_preview={decoded[:120]!r}',
-                    flush=True,
-                )
             yield json.dumps({
                 'type': 'chunk',
                 'chunk': decoded,
             }) + '\n'
 
-        print(
-            f'[BROKER][SERIAL_DEBUG] serial_finished ts={time.time():.3f} '
-            f'port={request.port} reason=completed bytes_captured={bytes_captured} chunk_count={chunk_index}',
-            flush=True,
-        )
         yield json.dumps({
             'type': 'finished',
             'reason': 'completed',
             'bytes_captured': bytes_captured,
         }) + '\n'
     except serial.SerialException as exc:
-        print(
-            f'[BROKER][SERIAL_DEBUG] serial_finished ts={time.time():.3f} '
-            f'port={request.port} reason=serial_error bytes_captured={bytes_captured} error={exc}',
-            flush=True,
-        )
         yield json.dumps({
             'type': 'finished',
             'reason': 'serial_error',
@@ -296,11 +267,6 @@ def _serial_capture_stream(request: SerialCaptureRequest):
             'bytes_captured': bytes_captured,
         }) + '\n'
     except Exception as exc:
-        print(
-            f'[BROKER][SERIAL_DEBUG] serial_finished ts={time.time():.3f} '
-            f'port={request.port} reason=error bytes_captured={bytes_captured} error={exc}',
-            flush=True,
-        )
         yield json.dumps({
             'type': 'finished',
             'reason': 'error',
@@ -310,10 +276,6 @@ def _serial_capture_stream(request: SerialCaptureRequest):
     finally:
         if connection and connection.is_open:
             connection.close()
-            print(
-                f'[BROKER][SERIAL_DEBUG] serial_closed ts={time.time():.3f} port={request.port}',
-                flush=True,
-            )
 
 
 @app.get('/healthcheck', tags=['Status'])

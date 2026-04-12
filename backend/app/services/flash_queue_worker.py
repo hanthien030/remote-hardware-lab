@@ -181,13 +181,6 @@ def _run_serial_capture(
     When stop is needed, closes the HTTP response so broker detects
     client disconnect and closes the serial port cleanly.
     """
-    print(
-        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-        f'start_capture ts={time.time():.3f} port={port} baud={baud_rate} '
-        f'duration={total_seconds}',
-        flush=True,
-    )
-
     response = requests.post(
         f'{BROKER_URL}/serial-capture',
         json={
@@ -213,7 +206,6 @@ def _run_serial_capture(
     watcher.start()
 
     finish_reason = 'completed'
-    chunk_index = 0
     last_ping_check = time.time()
 
     try:
@@ -222,11 +214,6 @@ def _run_serial_capture(
             if stop_event.is_set():
                 _, reason = flash_serial_session.should_continue(request_id)
                 finish_reason = reason if reason else 'user_stopped'
-                print(
-                    f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-                    f'stop_event ts={time.time():.3f} resolved_reason={finish_reason}',
-                    flush=True,
-                )
                 break
 
             # Periodic ping + should_continue check (every ~5s)
@@ -236,11 +223,6 @@ def _run_serial_capture(
                 should_keep, reason = flash_serial_session.should_continue(request_id)
                 if not should_keep:
                     finish_reason = reason
-                    print(
-                        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-                        f'session_ended ts={now:.3f} reason={reason}',
-                        flush=True,
-                    )
                     break
                 last_ping_check = now
 
@@ -255,25 +237,12 @@ def _run_serial_capture(
             event_type = payload.get('type')
 
             if event_type == 'started':
-                print(
-                    f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-                    f'broker_started ts={time.time():.3f} payload={payload}',
-                    flush=True,
-                )
                 continue
 
             if event_type == 'chunk':
                 chunk = payload.get('chunk') or ''
                 if not chunk:
                     continue
-                chunk_index += 1
-                if chunk_index <= 3:
-                    print(
-                        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-                        f'chunk_index={chunk_index} ts={time.time():.3f} '
-                        f'chars={len(chunk)} preview={chunk[:120]!r}',
-                        flush=True,
-                    )
                 flash_queue_service.append_serial_log(request_id, chunk)
                 broadcast_flash_serial_chunk(
                     request_id=request_id,
@@ -285,11 +254,6 @@ def _run_serial_capture(
 
             if event_type == 'finished':
                 finish_reason = payload.get('reason') or finish_reason
-                print(
-                    f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-                    f'broker_finished ts={time.time():.3f} payload={payload}',
-                    flush=True,
-                )
                 break
 
     except Exception as exc:
@@ -298,21 +262,10 @@ def _run_serial_capture(
             _, reason = flash_serial_session.should_continue(request_id)
             finish_reason = reason if reason else 'user_stopped'
         else:
-            print(
-                f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-                f'stream_error ts={time.time():.3f} error={exc}',
-                flush=True,
-            )
             finish_reason = 'error'
     finally:
         response.close()
 
-    print(
-        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-        f'end_capture ts={time.time():.3f} finish_reason={finish_reason} '
-        f'chunks_seen={chunk_index}',
-        flush=True,
-    )
     return finish_reason
 
 
@@ -417,13 +370,6 @@ def _process_candidate(request_id: int, tag_name: str):
         broker_data = broker_resp.json()
         bytes_written = broker_data.get('bytes_written', len(firmware_bytes))
         log_lines.append(f'Flash completed successfully. Bytes written: {bytes_written}')
-        print(
-            f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-            f'flash_complete ts={time.time():.3f} port={device["port"]} board={request_row["board_type"]} '
-            f'bytes_written={bytes_written} starting_serial_capture=1 baud={request_baud_rate}',
-            flush=True,
-        )
-
         stop_event = _register_serial_stop_event(tag_name)
         serial_reason = _capture_serial_session(
             request_id=request_id,
