@@ -8,6 +8,8 @@ WORKSPACE_ROOT = os.getenv('WORKSPACE_ROOT', '/workspaces')
 SAFE_NAME_RE = re.compile(r'^[\w\-]+$')
 SAFE_PATH_RE = re.compile(r'^[\w\-. /]+$')
 SUPPORTED_BOARDS = {'esp32', 'esp8266', 'arduino_uno'}
+SUPPORTED_BAUD_RATES = {9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800, 921600}
+DEFAULT_BAUD_RATE = 115200
 ACTIVE_STATUSES = ('waiting', 'flashing')
 USAGE_MODES = {'free', 'share', 'block'}
 
@@ -27,6 +29,7 @@ def _serialize_request(row: Optional[Dict]) -> Optional[Dict]:
         return None
 
     payload = dict(row)
+    payload['baud_rate'] = int(payload.get('baud_rate') or DEFAULT_BAUD_RATE)
     payload['project_name'] = _derive_project_name(payload['user_id'], payload['firmware_path'])
     payload['firmware_name'] = os.path.basename(payload['firmware_path'])
     return payload
@@ -220,9 +223,18 @@ def list_eligible_devices(username: str) -> List[Dict]:
         conn.close()
 
 
-def enqueue_request(username: str, project_name: str, tag_name: str, board_type: str, firmware_path: str) -> Dict:
+def enqueue_request(
+    username: str,
+    project_name: str,
+    tag_name: str,
+    board_type: str,
+    firmware_path: str,
+    baud_rate: int = DEFAULT_BAUD_RATE,
+) -> Dict:
     if board_type not in SUPPORTED_BOARDS:
         raise ValueError('Unsupported board type')
+    if baud_rate not in SUPPORTED_BAUD_RATES:
+        raise ValueError('Unsupported baud rate')
 
     resolved_path = _safe_workspace_file(username, project_name, firmware_path)
     conn = create_db_connection()
@@ -265,10 +277,10 @@ def enqueue_request(username: str, project_name: str, tag_name: str, board_type:
 
         cursor.execute(
             """
-            INSERT INTO flash_queue (user_id, tag_name, board_type, firmware_path, status)
-            VALUES (%s, %s, %s, %s, 'waiting')
+            INSERT INTO flash_queue (user_id, tag_name, board_type, firmware_path, baud_rate, status)
+            VALUES (%s, %s, %s, %s, %s, 'waiting')
             """,
-            (username, tag_name, board_type, resolved_path),
+            (username, tag_name, board_type, resolved_path, baud_rate),
         )
         request_id = cursor.lastrowid
         conn.commit()
@@ -330,7 +342,7 @@ def list_history(username: str, page: int = 1, limit: int = 20, status: Optional
 
         cursor.execute(
             f"""
-            SELECT id, user_id, tag_name, board_type, firmware_path, status,
+            SELECT id, user_id, tag_name, board_type, firmware_path, baud_rate, status,
                    created_at, started_at, completed_at
             FROM flash_queue
             {where_clause}
@@ -623,7 +635,7 @@ def fail_flashing_requests_for_device(tag_name: str, reason: str) -> List[Dict]:
     try:
         cursor.execute(
             """
-            SELECT id, user_id, tag_name, board_type, firmware_path, status,
+            SELECT id, user_id, tag_name, board_type, firmware_path, baud_rate, status,
                    created_at, started_at, completed_at, log_output, serial_log
             FROM flash_queue
             WHERE tag_name = %s AND status = 'flashing'

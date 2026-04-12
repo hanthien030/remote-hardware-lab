@@ -533,6 +533,9 @@ export const HistoryIndex: React.FC = () => {
                     Board: {detailRequest.board_type}
                   </div>
                   <div style={{ color: 'var(--vscode-text-muted)', fontSize: 14 }}>
+                    Baud: {detailRequest.baud_rate || 115200}
+                  </div>
+                  <div style={{ color: 'var(--vscode-text-muted)', fontSize: 14 }}>
                     Firmware: {detailRequest.firmware_name || detailRequest.firmware_path}
                   </div>
                   <div style={{ color: 'var(--vscode-text-muted)', fontSize: 14 }}>

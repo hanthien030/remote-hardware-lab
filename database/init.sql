@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS `flash_queue` (
   `tag_name` VARCHAR(50) NOT NULL,         -- thiết bị yêu cầu
   `board_type` VARCHAR(20) NOT NULL,       -- esp32/esp8266/arduino_uno
   `firmware_path` VARCHAR(255) NOT NULL,   -- đường dẫn file .bin
+  `baud_rate` INT NOT NULL DEFAULT 115200, -- baud cho serial capture sau flash
   `status` ENUM('waiting','flashing','success','failed','cancelled') NOT NULL DEFAULT 'waiting',
   `created_at` DATETIME DEFAULT NOW(),
   `started_at` DATETIME NULL,

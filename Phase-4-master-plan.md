@@ -386,27 +386,27 @@ Chỉ trả về:
 ### Batch 1 — Bug fixes + Baud selector
 
 #### Bug B — Manual stop wrongly marks failed
-- [ ] Trace worker state machine: tìm nhánh map manual stop → interrupted → failed
-- [ ] Fix worker: manual stop sau flash thành công giữ nguyên `success`
-- [ ] Append log: "Live serial session stopped early by user."
-- [ ] Verify device unlock sạch sau manual stop
-- [ ] Verify partial serial output được giữ lại
-- [ ] Retest: ESP32 stop-live → status = success ✓
+- [x] Trace worker state machine: tìm nhánh map manual stop → interrupted → failed
+- [x] Fix worker: manual stop sau flash thành công giữ nguyên `success`
+- [x] Append log: "Live serial session stopped early by user."
+- [x] Verify device unlock sạch sau manual stop
+- [x] Verify partial serial output được giữ lại
+- [x] Retest: ESP32 stop-live → status = success ✓
 
 #### Bug A — ESP8266 serial not captured
-- [ ] Thêm instrumentation logging tạm thời vào serial-capture path
-- [ ] Chạy ESP8266 flash, đọc log: port, baud, bytes đầu tiên, timing
-- [ ] Xác định root cause (re-enumeration? timing? baud mismatch? port stale?)
-- [ ] Patch đúng điểm, nhỏ và đảo ngược được
-- [ ] Retest ESP32 ngay sau mỗi patch (không để regression)
-- [ ] Xác nhận ESP8266 serial_log có dữ liệu trong History
+- [x] Thêm instrumentation logging tạm thời vào serial-capture path
+- [x] Chạy ESP8266 flash, đọc log: port, baud, bytes đầu tiên, timing
+- [x] Xác định root cause (re-enumeration? timing? baud mismatch? port stale?)
+- [x] Patch đúng điểm, nhỏ và đảo ngược được
+- [x] Retest ESP32 ngay sau mỗi patch (không để regression)
+- [x] Xác nhận ESP8266 serial_log có dữ liệu trong History
 
 #### Feature C — Baud rate selector
-- [ ] Thêm baud dropdown vào Flash Dialog (default 115200)
-- [ ] Truyền baud theo pipeline: API request → worker → broker
-- [ ] Broker mở serial port với baud đã chọn
-- [ ] Baud rate hiển thị trong History detail
-- [ ] Retest: flash với baud 9600 và 115200, kiểm tra log đúng
+- [x] Thêm baud dropdown vào Flash Dialog (default 115200)
+- [x] Truyền baud theo pipeline: API request → worker → broker
+- [x] Broker mở serial port với baud đã chọn
+- [x] Baud rate hiển thị trong History detail
+- [x] Retest: flash với baud 9600 và 115200, kiểm tra log đúng
 
 #### Batch 1 wrap-up
 - [ ] Manual retest toàn bộ Batch 1 completed

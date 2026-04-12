@@ -31,6 +31,10 @@ _serial_stop_events: Dict[str, threading.Event] = {}
 _serial_stop_lock = threading.Lock()
 
 
+def _resolve_request_baud_rate(request_row: Dict) -> int:
+    return int(request_row.get('baud_rate') or SERIAL_BAUD_RATE)
+
+
 def _should_skip_startup() -> bool:
     if os.environ.get('FLASK_RUN_FROM_CLI') == 'true' and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         return True
@@ -167,6 +171,7 @@ def _run_serial_capture(
     username: str,
     tag_name: str,
     port: str,
+    baud_rate: int,
     total_seconds: int,
     stop_event: threading.Event,
 ) -> str:
@@ -178,7 +183,7 @@ def _run_serial_capture(
     """
     print(
         f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
-        f'start_capture ts={time.time():.3f} port={port} baud={SERIAL_BAUD_RATE} '
+        f'start_capture ts={time.time():.3f} port={port} baud={baud_rate} '
         f'duration={total_seconds}',
         flush=True,
     )
@@ -188,7 +193,7 @@ def _run_serial_capture(
         json={
             'port': port,
             'duration_seconds': total_seconds,
-            'baud_rate': SERIAL_BAUD_RATE,
+            'baud_rate': baud_rate,
         },
         stream=True,
         timeout=(10, total_seconds + 30),
@@ -316,6 +321,7 @@ def _capture_serial_session(
     username: str,
     tag_name: str,
     port: str,
+    baud_rate: int,
     stop_event: threading.Event,
 ) -> str:
     flash_serial_session.start_session(request_id, username, tag_name, SERIAL_CAPTURE_SECONDS)
@@ -328,7 +334,7 @@ def _capture_serial_session(
         tag_name=tag_name,
         user=username,
         duration_seconds=SERIAL_CAPTURE_SECONDS,
-        baud_rate=SERIAL_BAUD_RATE,
+        baud_rate=baud_rate,
     )
 
     try:
@@ -337,6 +343,7 @@ def _capture_serial_session(
             username=username,
             tag_name=tag_name,
             port=port,
+            baud_rate=baud_rate,
             total_seconds=SERIAL_CAPTURE_SECONDS,
             stop_event=stop_event,
         )
@@ -353,6 +360,7 @@ def _process_candidate(request_id: int, tag_name: str):
 
         request_row, device = claimed
         username = request_row['user_id']
+        request_baud_rate = _resolve_request_baud_rate(request_row)
         log_lines = [
             'Worker claimed request and started flashing.',
             f"Target device: {tag_name}",
@@ -412,7 +420,7 @@ def _process_candidate(request_id: int, tag_name: str):
         print(
             f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
             f'flash_complete ts={time.time():.3f} port={device["port"]} board={request_row["board_type"]} '
-            f'bytes_written={bytes_written} starting_serial_capture=1 baud={SERIAL_BAUD_RATE}',
+            f'bytes_written={bytes_written} starting_serial_capture=1 baud={request_baud_rate}',
             flush=True,
         )
 
@@ -422,6 +430,7 @@ def _process_candidate(request_id: int, tag_name: str):
             username=username,
             tag_name=tag_name,
             port=device['port'],
+            baud_rate=request_baud_rate,
             stop_event=stop_event,
         )
 

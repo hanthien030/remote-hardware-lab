@@ -38,6 +38,8 @@ const BOARD_OPTIONS = [
   { value: 'arduino_uno', label: 'Arduino Uno' },
 ];
 
+const BAUD_RATE_OPTIONS = [9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800, 921600];
+
 export const FlashDialog: React.FC<FlashDialogProps> = ({
   isOpen,
   projectName,
@@ -49,6 +51,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
   const [devices, setDevices] = useState<FlashEligibleDevice[]>([]);
   const [selectedTag, setSelectedTag] = useState('');
   const [board, setBoard] = useState(initialBoard);
+  const [baudRate, setBaudRate] = useState(115200);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -60,6 +63,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
     }
 
     setBoard(initialBoard);
+    setBaudRate(115200);
     setLoading(true);
     setError('');
 
@@ -121,6 +125,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
         tag_name: selectedTag,
         board_type: board,
         firmware_path: firmwarePath,
+        baud_rate: baudRate,
       });
       const queuedRequest = await resolveQueuedRequest(response.data.request || null);
       if (!queuedRequest) {
@@ -213,7 +218,34 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
 
           <section>
             <div style={{ color: 'var(--vscode-text-muted)', fontSize: 12, textTransform: 'uppercase', marginBottom: 10 }}>
-              2. Chon thiet bi dang ket noi
+              2. Chon baud rate serial
+            </div>
+            <label style={{ display: 'grid', gap: 8, color: 'var(--vscode-text-main)' }}>
+              <span style={{ fontSize: 14 }}>Baud rate duoc dung cho serial capture sau khi flash.</span>
+              <select
+                value={baudRate}
+                onChange={(event) => setBaudRate(Number(event.target.value))}
+                disabled={submitting}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--vscode-border)',
+                  background: 'var(--vscode-bg-panel)',
+                  color: 'var(--vscode-text-main)',
+                }}
+              >
+                {BAUD_RATE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <section>
+            <div style={{ color: 'var(--vscode-text-muted)', fontSize: 12, textTransform: 'uppercase', marginBottom: 10 }}>
+              3. Chon thiet bi dang ket noi
             </div>
             {loading ? (
               <div style={{ color: 'var(--vscode-text-muted)', padding: '18px 0' }}>Dang tai thiet bi...</div>
@@ -294,6 +326,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
                 Tong quan request
               </div>
               <div>Board: <strong>{BOARD_OPTIONS.find((option) => option.value === board)?.label || board}</strong></div>
+              <div>Baud rate: <strong>{baudRate}</strong></div>
               <div>Tag: <strong>{selectedDevice.tag_name}</strong></div>
               <div>Queue depth hien tai: <strong>{selectedDevice.queue_depth}</strong></div>
             </section>

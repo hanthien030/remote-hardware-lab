@@ -7,6 +7,7 @@ export interface FlashQueueRequest {
   user_id: string;
   tag_name: string;
   board_type: string;
+  baud_rate: number;
   firmware_path: string;
   firmware_name?: string;
   project_name?: string | null;
@@ -47,6 +48,7 @@ interface EnqueueFlashRequestInput {
   tag_name: string;
   board_type: string;
   firmware_path: string;
+  baud_rate: number;
 }
 
 export const flashQueueAPI = {

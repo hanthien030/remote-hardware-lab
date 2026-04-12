@@ -5,6 +5,7 @@ from app.logger import log_action
 from app.services import flash_queue_service, flash_queue_worker, flash_serial_session
 
 flash_queue_bp = Blueprint('flash_queue_bp', __name__)
+SUPPORTED_BAUD_RATES = (9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800, 921600)
 
 
 @flash_queue_bp.route('/api/flash/devices', methods=['GET'])
@@ -25,9 +26,18 @@ def enqueue_flash_request():
     tag_name = (data.get('tag_name') or '').strip()
     board_type = (data.get('board_type') or '').strip()
     firmware_path = (data.get('firmware_path') or '').strip()
+    baud_rate_raw = data.get('baud_rate', 115200)
 
     if not all([project_name, tag_name, board_type, firmware_path]):
         return jsonify(ok=False, error='Missing required fields: project_name, tag_name, board_type, firmware_path'), 400
+
+    try:
+        baud_rate = int(baud_rate_raw)
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error='baud_rate must be an integer'), 400
+
+    if baud_rate not in SUPPORTED_BAUD_RATES:
+        return jsonify(ok=False, error=f'Unsupported baud_rate. Allowed values: {", ".join(str(rate) for rate in SUPPORTED_BAUD_RATES)}'), 400
 
     try:
         queued_request = flash_queue_service.enqueue_request(
@@ -36,12 +46,14 @@ def enqueue_flash_request():
             tag_name=tag_name,
             board_type=board_type,
             firmware_path=firmware_path,
+            baud_rate=baud_rate,
         )
         log_action(username, 'Enqueue Flash Request', details={
             'request_id': queued_request['id'],
             'tag_name': tag_name,
             'board_type': board_type,
             'project_name': project_name,
+            'baud_rate': baud_rate,
         })
         return jsonify(ok=True, request=queued_request), 201
     except FileNotFoundError as exc:
