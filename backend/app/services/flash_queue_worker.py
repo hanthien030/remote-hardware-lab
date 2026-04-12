@@ -3,7 +3,7 @@ import json
 import os
 import threading
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 import requests
 
@@ -162,46 +162,113 @@ def _scheduler_loop():
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
-def _run_serial_capture_segment(
+def _run_serial_capture(
     request_id: int,
     username: str,
     tag_name: str,
     port: str,
-    duration_seconds: int,
+    total_seconds: int,
     stop_event: threading.Event,
-) -> Tuple[bool, str]:
+) -> str:
+    """
+    Single HTTP call to broker for the full session duration.
+    Port is opened once and kept open — no reopen between segments.
+    When stop is needed, closes the HTTP response so broker detects
+    client disconnect and closes the serial port cleanly.
+    """
+    print(
+        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+        f'start_capture ts={time.time():.3f} port={port} baud={SERIAL_BAUD_RATE} '
+        f'duration={total_seconds}',
+        flush=True,
+    )
+
     response = requests.post(
         f'{BROKER_URL}/serial-capture',
         json={
             'port': port,
-            'duration_seconds': duration_seconds,
+            'duration_seconds': total_seconds,
             'baud_rate': SERIAL_BAUD_RATE,
         },
         stream=True,
-        timeout=(10, duration_seconds + 20),
+        timeout=(10, total_seconds + 30),
     )
     response.raise_for_status()
 
+    # Watcher thread: if stop_event fires while iter_lines() is blocked
+    # (board not printing anything), this closes the response to unblock the loop.
+    def _stop_watcher():
+        stop_event.wait()
+        try:
+            response.close()
+        except Exception:
+            pass
+
+    watcher = threading.Thread(target=_stop_watcher, daemon=True)
+    watcher.start()
+
     finish_reason = 'completed'
+    chunk_index = 0
+    last_ping_check = time.time()
+
     try:
         for raw_line in response.iter_lines(decode_unicode=True):
+            # Check stop_event first (user stopped or watcher unblocked us)
             if stop_event.is_set():
-                finish_reason = 'interrupted'
+                _, reason = flash_serial_session.should_continue(request_id)
+                finish_reason = reason if reason else 'user_stopped'
+                print(
+                    f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+                    f'stop_event ts={time.time():.3f} resolved_reason={finish_reason}',
+                    flush=True,
+                )
                 break
+
+            # Periodic ping + should_continue check (every ~5s)
+            now = time.time()
+            if now - last_ping_check >= 5.0:
+                flash_serial_session.maybe_send_ping(request_id)
+                should_keep, reason = flash_serial_session.should_continue(request_id)
+                if not should_keep:
+                    finish_reason = reason
+                    print(
+                        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+                        f'session_ended ts={now:.3f} reason={reason}',
+                        flush=True,
+                    )
+                    break
+                last_ping_check = now
 
             if not raw_line:
                 continue
 
-            payload = json.loads(raw_line)
+            try:
+                payload = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+
             event_type = payload.get('type')
 
             if event_type == 'started':
+                print(
+                    f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+                    f'broker_started ts={time.time():.3f} payload={payload}',
+                    flush=True,
+                )
                 continue
 
             if event_type == 'chunk':
                 chunk = payload.get('chunk') or ''
                 if not chunk:
                     continue
+                chunk_index += 1
+                if chunk_index <= 3:
+                    print(
+                        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+                        f'chunk_index={chunk_index} ts={time.time():.3f} '
+                        f'chars={len(chunk)} preview={chunk[:120]!r}',
+                        flush=True,
+                    )
                 flash_queue_service.append_serial_log(request_id, chunk)
                 broadcast_flash_serial_chunk(
                     request_id=request_id,
@@ -213,11 +280,35 @@ def _run_serial_capture_segment(
 
             if event_type == 'finished':
                 finish_reason = payload.get('reason') or finish_reason
+                print(
+                    f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+                    f'broker_finished ts={time.time():.3f} payload={payload}',
+                    flush=True,
+                )
                 break
+
+    except Exception as exc:
+        # response.close() from watcher raises ConnectionError/ReadError — treat as stop
+        if stop_event.is_set():
+            _, reason = flash_serial_session.should_continue(request_id)
+            finish_reason = reason if reason else 'user_stopped'
+        else:
+            print(
+                f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+                f'stream_error ts={time.time():.3f} error={exc}',
+                flush=True,
+            )
+            finish_reason = 'error'
     finally:
         response.close()
 
-    return finish_reason == 'completed', finish_reason
+    print(
+        f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+        f'end_capture ts={time.time():.3f} finish_reason={finish_reason} '
+        f'chunks_seen={chunk_index}',
+        flush=True,
+    )
+    return finish_reason
 
 
 def _capture_serial_session(
@@ -241,23 +332,14 @@ def _capture_serial_session(
     )
 
     try:
-        while True:
-            flash_serial_session.maybe_send_ping(request_id)
-            should_continue, reason = flash_serial_session.should_continue(request_id)
-            if not should_continue:
-                return reason
-
-            chunk_seconds = flash_serial_session.current_chunk_seconds(request_id)
-            ok, finish_reason = _run_serial_capture_segment(
-                request_id=request_id,
-                username=username,
-                tag_name=tag_name,
-                port=port,
-                duration_seconds=chunk_seconds,
-                stop_event=stop_event,
-            )
-            if not ok:
-                return finish_reason
+        return _run_serial_capture(
+            request_id=request_id,
+            username=username,
+            tag_name=tag_name,
+            port=port,
+            total_seconds=SERIAL_CAPTURE_SECONDS,
+            stop_event=stop_event,
+        )
     finally:
         flash_serial_session.end_session(request_id)
 
@@ -327,6 +409,12 @@ def _process_candidate(request_id: int, tag_name: str):
         broker_data = broker_resp.json()
         bytes_written = broker_data.get('bytes_written', len(firmware_bytes))
         log_lines.append(f'Flash completed successfully. Bytes written: {bytes_written}')
+        print(
+            f'[FLASH_QUEUE][SERIAL_DEBUG] request_id={request_id} tag={tag_name} '
+            f'flash_complete ts={time.time():.3f} port={device["port"]} board={request_row["board_type"]} '
+            f'bytes_written={bytes_written} starting_serial_capture=1 baud={SERIAL_BAUD_RATE}',
+            flush=True,
+        )
 
         stop_event = _register_serial_stop_event(tag_name)
         serial_reason = _capture_serial_session(
@@ -339,16 +427,16 @@ def _process_candidate(request_id: int, tag_name: str):
 
         if serial_reason == 'completed':
             log_lines.append(f'Serial capture completed after the default {SERIAL_CAPTURE_SECONDS} seconds.')
-        elif serial_reason == 'viewer_inactive':
+        elif serial_reason in ('viewer_inactive', 'session_missing'):
             log_lines.append('Extended live serial session ended because no active viewer remained.')
         elif serial_reason == 'viewer_timeout':
             log_lines.append('Extended live serial session ended because the viewer did not answer ping in time.')
         elif serial_reason == 'user_stopped':
-            log_lines.append('Live serial session was stopped by the user. Preserving captured serial output and releasing the device lock.')
-        elif serial_reason == 'interrupted':
-            raise RuntimeError('Serial capture interrupted before the live session could finish.')
+            log_lines.append('Live serial session stopped early by user.')
+        elif serial_reason in ('serial_error', 'error'):
+            raise RuntimeError(f'Serial capture ended due to hardware error: {serial_reason}')
         else:
-            raise RuntimeError(f'Serial capture finished with reason: {serial_reason}')
+            log_lines.append(f'Serial session ended: {serial_reason}.')
 
         broadcast_flash_serial_finished(
             request_id=request_id,
