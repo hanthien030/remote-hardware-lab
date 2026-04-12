@@ -8,6 +8,9 @@ COPY requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
 
 # 3. Cài các thư viện Arduino (phần này nhẹ, cài rất nhanh)
+RUN arduino-cli core update-index --additional-urls https://arduino.esp8266.com/stable/package_esp8266com_index.json \
+    && arduino-cli core install --additional-urls https://arduino.esp8266.com/stable/package_esp8266com_index.json esp8266:esp8266
+
 RUN arduino-cli lib install "ArduinoJson" \
     && arduino-cli lib install "PubSubClient"
 

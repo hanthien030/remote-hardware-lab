@@ -22,7 +22,7 @@ import glob
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List, Generator
+from typing import Optional, List, Generator, Dict
 
 app = FastAPI(
     title="Remote Lab Compiler",
@@ -42,6 +42,15 @@ BOARD_MAP = {
 }
 
 DEFAULT_BOARD = "esp32:esp32:esp32"
+FLASH_TOOL_HINTS = {
+    "esp32": "esptool",
+    "esp32dev": "esptool",
+    "esp32s2": "esptool",
+    "esp8266": "esptool",
+    "arduino_uno": "avrdude",
+    "arduino_mega": "avrdude",
+    "arduino_nano": "avrdude",
+}
 
 
 def _sse_event(data: dict) -> str:
@@ -65,9 +74,51 @@ def _find_firmware_bin(build_dir: str) -> Optional[str]:
     return None
 
 
+def _find_firmware_hex(build_dir: str) -> Optional[str]:
+    """Find the main firmware .hex, preferring the non-bootloader image."""
+    preferred = []
+    fallback = []
+    for artifact_path in glob.glob(os.path.join(build_dir, "*.hex")):
+        name = os.path.basename(artifact_path).lower()
+        if "with_bootloader" in name or "bootloader" in name:
+            fallback.append(artifact_path)
+        else:
+            preferred.append(artifact_path)
+
+    matches = sorted(preferred) or sorted(fallback)
+    return matches[0] if matches else None
+
+
 def _find_first_artifact(build_dir: str, pattern: str) -> Optional[str]:
     matches = sorted(glob.glob(os.path.join(build_dir, pattern)))
     return matches[0] if matches else None
+
+
+def _resolve_compile_artifact(board: str, build_dir: str) -> Optional[Dict]:
+    normalized_board = board.lower()
+    artifact_path = None
+
+    if normalized_board.startswith("esp32") or normalized_board == "esp8266":
+        artifact_path = _find_firmware_bin(build_dir)
+    elif normalized_board.startswith("arduino_"):
+        artifact_path = _find_firmware_hex(build_dir)
+
+    if not artifact_path:
+        return None
+
+    artifact_ext = os.path.splitext(artifact_path)[1].lower()
+    flash_tool_hint = FLASH_TOOL_HINTS.get(normalized_board)
+    flash_layout = None
+    if normalized_board.startswith("esp32"):
+        flash_layout = _build_esp32_flash_layout(build_dir, artifact_path)
+
+    return {
+        "path": artifact_path,
+        "filename": os.path.basename(artifact_path),
+        "ext": artifact_ext,
+        "flash_tool_hint": flash_tool_hint,
+        "flash_layout": flash_layout,
+    }
 
 
 def _encode_flash_segments(segment_sources: List[tuple]) -> List[dict]:
@@ -200,7 +251,12 @@ class CompileStreamRequest(BaseModel):
 
 class CompileResponse(BaseModel):
     ok: bool
+    artifact_base64: Optional[str] = None
+    artifact_filename: Optional[str] = None
+    artifact_ext: Optional[str] = None
+    flash_tool_hint: Optional[str] = None
     bin_base64: Optional[str] = None
+    bin_filename: Optional[str] = None
     size_bytes: Optional[int] = None
     compile_log: str = ""
     error: Optional[str] = None
@@ -247,16 +303,31 @@ def compile_firmware(req: CompileRequest):
             return CompileResponse(ok=False, compile_log=compile_log,
                                    error=f"Compilation failed (exit {result.returncode})")
 
-        firmware_bin = _find_firmware_bin(build_dir)
-        if not firmware_bin:
-            return CompileResponse(ok=False, compile_log=compile_log,
-                                   error="Compiled but could not find .bin file")
+        artifact = _resolve_compile_artifact(req.board, build_dir)
+        if not artifact:
+            return CompileResponse(
+                ok=False,
+                compile_log=compile_log,
+                error=f"Compiled but could not find the expected firmware artifact for board {req.board}",
+            )
 
-        with open(firmware_bin, "rb") as f:
-            bin_data = f.read()
+        with open(artifact["path"], "rb") as artifact_file:
+            artifact_data = artifact_file.read()
 
-        return CompileResponse(ok=True, bin_base64=base64.b64encode(bin_data).decode(),
-                               size_bytes=len(bin_data), compile_log=compile_log)
+        response_payload = {
+            "ok": True,
+            "artifact_base64": base64.b64encode(artifact_data).decode(),
+            "artifact_filename": artifact["filename"],
+            "artifact_ext": artifact["ext"],
+            "flash_tool_hint": artifact["flash_tool_hint"],
+            "size_bytes": len(artifact_data),
+            "compile_log": compile_log,
+        }
+        if artifact["ext"] == ".bin":
+            response_payload["bin_base64"] = response_payload["artifact_base64"]
+            response_payload["bin_filename"] = artifact["filename"]
+
+        return CompileResponse(**response_payload)
 
     except subprocess.TimeoutExpired:
         return CompileResponse(ok=False, compile_log="", error="Compilation timed out (> 180s)")
@@ -274,7 +345,7 @@ def compile_stream(req: CompileStreamRequest):
     SSE events:
       {"stage": "info",    "log": "..."}
       {"stage": "compile", "log": "<arduino-cli output line>"}
-      {"stage": "done",    "bin_base64": "...", "size_bytes": N, "bin_filename": "..."}
+      {"stage": "done",    "artifact_base64": "...", "size_bytes": N, "artifact_filename": "..."}
       {"stage": "error",   "error": "message"}
     """
     fqbn = BOARD_MAP.get(req.board.lower(), req.board)
@@ -427,18 +498,19 @@ def compile_stream(req: CompileStreamRequest):
                 return
 
             # ── 8. Find and return .bin ──
-            firmware_bin = _find_firmware_bin(build_dir)
-            if not firmware_bin:
-                yield _sse_event({"stage": "error",
-                                  "error": "Compiled OK but .bin output not found"})
+            artifact = _resolve_compile_artifact(req.board, build_dir)
+            if not artifact:
+                yield _sse_event({
+                    "stage": "error",
+                    "error": f"Compiled OK but the expected firmware artifact for board {req.board} was not found",
+                })
                 return
 
-            with open(firmware_bin, "rb") as f:
-                bin_data = f.read()
+            with open(artifact["path"], "rb") as artifact_file:
+                artifact_data = artifact_file.read()
 
-            flash_layout = None
+            flash_layout = artifact["flash_layout"]
             if req.board.lower().startswith("esp32"):
-                flash_layout = _build_esp32_flash_layout(build_dir, firmware_bin)
                 if flash_layout:
                     yield _sse_event({
                         "stage": "info",
@@ -450,15 +522,26 @@ def compile_stream(req: CompileStreamRequest):
                         "log": "ESP32 extra flash artifacts were not fully available; only the app binary could be exported.",
                     })
 
-            yield _sse_event({"stage": "info",
-                              "log": f"✅ Binary size: {len(bin_data)/1024:.1f} KB"})
             yield _sse_event({
-                "stage": "done",
-                "bin_base64": base64.b64encode(bin_data).decode(),
-                "size_bytes": len(bin_data),
-                "bin_filename": os.path.basename(firmware_bin),
-                "flash_layout": flash_layout,
+                "stage": "info",
+                "log": f"Saved firmware artifact: {artifact['filename']} ({len(artifact_data)/1024:.1f} KB)",
             })
+
+            yield _sse_event({"stage": "info",
+                              "log": f"Artifact size: {len(artifact_data)/1024:.1f} KB"})
+            done_event = {
+                "stage": "done",
+                "artifact_base64": base64.b64encode(artifact_data).decode(),
+                "artifact_filename": artifact["filename"],
+                "artifact_ext": artifact["ext"],
+                "flash_tool_hint": artifact["flash_tool_hint"],
+                "size_bytes": len(artifact_data),
+                "flash_layout": flash_layout,
+            }
+            if artifact["ext"] == ".bin":
+                done_event["bin_base64"] = done_event["artifact_base64"]
+                done_event["bin_filename"] = artifact["filename"]
+            yield _sse_event(done_event)
 
         except Exception as e:
             yield _sse_event({"stage": "error", "error": str(e)})
