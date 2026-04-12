@@ -55,12 +55,13 @@ def get_devices():
     try:
         cursor.execute(
             """
-            SELECT d.tag_name, d.device_name, d.type, d.port, d.status, d.usage_mode, d.is_virtualized,
+            SELECT d.tag_name, d.device_name, d.type, d.port, d.status, d.usage_mode, d.board_class, d.review_state, d.is_virtualized,
                    d.locked_by_user, d.last_seen, d.created_at,
                    GROUP_CONCAT(a.user_id ORDER BY a.created_at DESC SEPARATOR ', ') AS assigned_to
             FROM devices d
             LEFT JOIN assignments a ON d.tag_name = a.tag_name
                 AND a.is_active = TRUE AND (a.expires_at IS NULL OR a.expires_at > NOW())
+            WHERE d.review_state = 'approved'
             GROUP BY d.tag_name
             ORDER BY d.created_at DESC
             """
@@ -89,6 +90,26 @@ def get_devices():
             device['assignments'] = assignments_by_tag.get(device['tag_name'], [])
 
         return jsonify(ok=True, devices=devices)
+    finally:
+        cursor.close()
+
+
+@admin_hw_bp.route('/api/admin/devices/pending', methods=['GET', 'OPTIONS'])
+def get_pending_devices():
+    from app.db import get_db_connection
+
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT tag_name, device_name, type, port, status, usage_mode, board_class, review_state, created_at, last_seen
+            FROM devices
+            WHERE review_state = 'pending_review'
+            ORDER BY created_at DESC, tag_name ASC
+            """
+        )
+        return jsonify(ok=True, devices=cursor.fetchall())
     finally:
         cursor.close()
 
@@ -178,6 +199,54 @@ def update_device(tag_name):
         details={'old_tag': tag_name, 'new_tag': new_tag_name, 'usage_mode': usage_mode},
     )
     return jsonify(ok=True, message=message)
+
+
+@admin_hw_bp.route('/api/admin/devices/<string:tag_name>/approve', methods=['POST', 'OPTIONS'])
+def approve_device(tag_name):
+    from app.db import get_db_connection
+
+    data = request.get_json() or {}
+    device_name = (data.get('device_name') or '').strip() or None
+    board_class = (data.get('board_class') or '').strip()
+
+    if board_class not in ('esp32', 'esp8266', 'arduino_uno'):
+        return jsonify(ok=False, error="Invalid board_class"), 400
+
+    existing_device = hardware_service.get_device_by_tag(tag_name)
+    if not existing_device:
+        return jsonify(ok=False, error=f"No device found with tag_name: {tag_name}"), 404
+    if existing_device.get('review_state') != 'pending_review':
+        return jsonify(ok=False, error="Device is not pending review"), 409
+
+    db = get_db_connection()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE devices
+            SET device_name = %s,
+                board_class = %s,
+                review_state = 'approved'
+            WHERE tag_name = %s AND review_state = 'pending_review'
+            """,
+            (device_name, board_class, tag_name),
+        )
+        if cursor.rowcount != 1:
+            db.rollback()
+            return jsonify(ok=False, error="Device approval failed"), 409
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return jsonify(ok=False, error=str(e)), 500
+    finally:
+        cursor.close()
+
+    log_action(
+        session['username'],
+        'Approve Device Review',
+        details={'tag_name': tag_name, 'device_name': device_name, 'board_class': board_class},
+    )
+    return jsonify(ok=True, message='Device approved successfully.')
 
 
 @admin_hw_bp.route('/api/admin/assignments', methods=['POST', 'OPTIONS'])

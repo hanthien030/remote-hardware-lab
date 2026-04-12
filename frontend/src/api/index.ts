@@ -29,8 +29,14 @@ export const adminHardwareAPI = {
   listAllDevices: (filters?: { page?: number; limit?: number }) =>
     client.get('/api/admin/devices', { params: filters }),
 
+  listPendingDevices: () =>
+    client.get('/api/admin/devices/pending'),
+
   updateDevice: (tagName: string, data: { tag_name: string; device_name?: string | null; usage_mode?: 'free' | 'share' | 'block' }) =>
     client.put(`/api/admin/devices/${encodeURIComponent(tagName)}`, data),
+
+  approveDevice: (tagName: string, data: { device_name?: string | null; board_class: 'esp32' | 'esp8266' | 'arduino_uno' }) =>
+    client.post(`/api/admin/devices/${encodeURIComponent(tagName)}/approve`, data),
 
   assignDevice: (deviceId: string, userId: string, expires_at?: string) =>
     client.post(`/api/admin/assignments`, { 

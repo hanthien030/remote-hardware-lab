@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import '../styles/Admin.css';
 
 type UsageMode = 'free' | 'share' | 'block';
+type BoardClass = 'esp32' | 'esp8266' | 'arduino_uno';
 
 interface DeviceAssignment {
   user_id: string;
@@ -18,9 +19,28 @@ interface Device {
   port: string | null;
   status: string;
   usage_mode: UsageMode;
+  board_class?: BoardClass | null;
+  review_state?: 'pending_review' | 'approved';
   assigned_to: string | null;
   assignments: DeviceAssignment[];
   locked_by_user: string | null;
+}
+
+interface PendingDevice {
+  tag_name: string;
+  device_name: string | null;
+  type: string;
+  port: string | null;
+  status: string;
+  usage_mode: UsageMode;
+  board_class?: BoardClass | null;
+  review_state: 'pending_review' | 'approved';
+  created_at?: string;
+}
+
+interface PendingReviewDraft {
+  deviceNameInput: string;
+  boardClass: '' | BoardClass;
 }
 
 interface User {
@@ -54,14 +74,23 @@ const formatExpiry = (value: string | null) => {
   return date.toLocaleString();
 };
 
+const boardClassLabel = (value: BoardClass) => {
+  if (value === 'esp8266') return 'ESP8266';
+  if (value === 'arduino_uno') return 'Arduino Uno';
+  return 'ESP32';
+};
+
 export const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'devices' | 'users'>('devices');
   const [devices, setDevices] = useState<Device[]>([]);
+  const [pendingDevices, setPendingDevices] = useState<PendingDevice[]>([]);
+  const [pendingDrafts, setPendingDrafts] = useState<Record<string, PendingReviewDraft>>({});
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [usageSavingTag, setUsageSavingTag] = useState<string | null>(null);
+  const [approvingTag, setApprovingTag] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareUserId, setShareUserId] = useState('');
   const [shareExpiresAt, setShareExpiresAt] = useState('');
@@ -92,9 +121,25 @@ export const AdminPanel: React.FC = () => {
     try {
       setLoading(true);
       setError('');
-      const response = await adminHardwareAPI.listAllDevices();
-      const nextDevices = (response.data.devices || []) as Device[];
+      const [devicesResponse, pendingResponse] = await Promise.all([
+        adminHardwareAPI.listAllDevices(),
+        adminHardwareAPI.listPendingDevices(),
+      ]);
+      const nextDevices = (devicesResponse.data.devices || []) as Device[];
+      const nextPendingDevices = (pendingResponse.data.devices || []) as PendingDevice[];
       setDevices(nextDevices);
+      setPendingDevices(nextPendingDevices);
+      setPendingDrafts((currentDrafts) => {
+        const nextDrafts: Record<string, PendingReviewDraft> = {};
+        nextPendingDevices.forEach((device) => {
+          const existingDraft = currentDrafts[device.tag_name];
+          nextDrafts[device.tag_name] = existingDraft || {
+            deviceNameInput: device.device_name || '',
+            boardClass: '',
+          };
+        });
+        return nextDrafts;
+      });
       setSharePanel((prev) => {
         if (!prev.device) return prev;
         const refreshed = nextDevices.find((device) => device.tag_name === prev.device?.tag_name) || null;
@@ -229,6 +274,40 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
+  const updatePendingDraft = (tagName: string, patch: Partial<PendingReviewDraft>) => {
+    setPendingDrafts((prev) => ({
+      ...prev,
+      [tagName]: {
+        deviceNameInput: prev[tagName]?.deviceNameInput || '',
+        boardClass: prev[tagName]?.boardClass || '',
+        ...patch,
+      },
+    }));
+  };
+
+  const handleApprovePendingDevice = async (device: PendingDevice) => {
+    const draft = pendingDrafts[device.tag_name] || { deviceNameInput: device.device_name || '', boardClass: '' };
+    if (!draft.boardClass) {
+      setError(`Please choose a board class for ${device.tag_name}.`);
+      return;
+    }
+
+    setApprovingTag(device.tag_name);
+    setError('');
+    try {
+      await adminHardwareAPI.approveDevice(device.tag_name, {
+        device_name: draft.deviceNameInput.trim() || null,
+        board_class: draft.boardClass,
+      });
+      showSuccess(`Approved ${device.tag_name} as ${boardClassLabel(draft.boardClass)}.`);
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to approve pending device');
+    } finally {
+      setApprovingTag(null);
+    }
+  };
+
   const handleDeleteUser = async (userId: string, username: string) => {
     if (username === currentUser?.username) {
       alert('Cannot delete your own account.');
@@ -275,8 +354,77 @@ export const AdminPanel: React.FC = () => {
               </div>
             </div>
 
+            <section className="pending-review-card">
+              <div className="pending-review-header">
+                <div>
+                  <h3>Pending Review</h3>
+                  <p>New devices stay blocked until an admin names and classifies them.</p>
+                </div>
+                <span className="pending-review-badge">{pendingDevices.length}</span>
+              </div>
+
+              {pendingDevices.length === 0 ? (
+                <div className="pending-review-empty">No devices are waiting for review.</div>
+              ) : (
+                <div className="pending-review-list">
+                  {pendingDevices.map((device) => {
+                    const draft = pendingDrafts[device.tag_name] || { deviceNameInput: device.device_name || '', boardClass: '' };
+                    const isApproving = approvingTag === device.tag_name;
+                    return (
+                      <div key={device.tag_name} className="pending-review-item">
+                        <div className="pending-review-item-header">
+                          <div>
+                            <strong>{device.tag_name}</strong>
+                            <div className="device-subline">
+                              {device.type} • {device.port || 'No port'} • {device.status}
+                            </div>
+                          </div>
+                          <span className="usage-badge usage-block">Blocked</span>
+                        </div>
+
+                        <div className="pending-review-form">
+                          <label className="share-form-label">
+                            Device Name
+                            <input
+                              type="text"
+                              value={draft.deviceNameInput}
+                              onChange={(event) => updatePendingDraft(device.tag_name, { deviceNameInput: event.target.value })}
+                              placeholder="e.g. ESP8266_TEST"
+                              className="share-date-input"
+                            />
+                          </label>
+
+                          <label className="share-form-label">
+                            Board Class
+                            <select
+                              value={draft.boardClass}
+                              onChange={(event) => updatePendingDraft(device.tag_name, { boardClass: event.target.value as PendingReviewDraft['boardClass'] })}
+                              className="usage-select"
+                            >
+                              <option value="">Choose board class</option>
+                              <option value="esp32">ESP32</option>
+                              <option value="esp8266">ESP8266</option>
+                              <option value="arduino_uno">Arduino Uno</option>
+                            </select>
+                          </label>
+
+                          <button
+                            className="btn-primary"
+                            onClick={() => handleApprovePendingDevice(device)}
+                            disabled={isApproving || !draft.boardClass}
+                          >
+                            {isApproving ? 'Approving...' : 'Confirm & Approve'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
             {devices.length === 0 ? (
-              <div className="empty-state">No devices found</div>
+              <div className="empty-state">No approved devices found</div>
             ) : (
               <div className="device-layout">
                 <div className="device-list-card">

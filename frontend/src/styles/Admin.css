@@ -84,6 +84,79 @@
   color: #666;
 }
 
+.pending-review-card {
+  margin-bottom: 20px;
+  border: 1px solid #f2c46d;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffaf0 0%, #fff 100%);
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.pending-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.pending-review-header h3 {
+  margin: 0;
+  color: #7c2d12;
+}
+
+.pending-review-header p {
+  margin: 6px 0 0;
+  color: #9a3412;
+}
+
+.pending-review-badge {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #b45309;
+  color: #fff;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pending-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.pending-review-item {
+  border: 1px solid #f5d59f;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.pending-review-item-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.pending-review-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.9fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.pending-review-empty {
+  color: #92400e;
+  font-size: 14px;
+}
+
 .device-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(320px, 0.9fr);
@@ -445,5 +518,9 @@
 
   .share-panel-card {
     position: static;
+  }
+
+  .pending-review-form {
+    grid-template-columns: 1fr;
   }
 }

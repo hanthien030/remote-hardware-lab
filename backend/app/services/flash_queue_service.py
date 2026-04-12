@@ -70,7 +70,7 @@ def _advisory_lock_name(username: str) -> str:
 
 
 def _acquire_user_lock(conn, username: str, timeout_seconds: int = 5) -> bool:
-    cursor = conn.cursor()
+    cursor = conn.cursor(buffered=True)
     try:
         cursor.execute('SELECT GET_LOCK(%s, %s) AS lock_acquired', (_advisory_lock_name(username), timeout_seconds))
         row = cursor.fetchone()
@@ -80,24 +80,43 @@ def _acquire_user_lock(conn, username: str, timeout_seconds: int = 5) -> bool:
 
 
 def _release_user_lock(conn, username: str) -> None:
-    cursor = conn.cursor()
+    cursor = conn.cursor(buffered=True)
     try:
-        cursor.execute('SELECT RELEASE_LOCK(%s)', (_advisory_lock_name(username),))
+        cursor.execute('SELECT RELEASE_LOCK(%s) AS lock_released', (_advisory_lock_name(username),))
+        cursor.fetchone()
     finally:
         cursor.close()
 
 
-def _get_user_accessible_devices(conn, username: str) -> List[Dict]:
+def _get_user_accessible_devices(conn, username: str, board_type: Optional[str] = None) -> List[Dict]:
+    filters = [
+        "d.review_state = 'approved'",
+        "("
+        "      COALESCE(d.usage_mode, 'free') = 'free'"
+        "  OR ("
+        "       COALESCE(d.usage_mode, 'free') = 'share'"
+        "       AND a.user_id IS NOT NULL"
+        "     )"
+        ")",
+    ]
+    params: List = [username]
+
+    if board_type:
+        filters.append('d.board_class = %s')
+        params.append(board_type)
+
     cursor = _dict_cursor(conn)
     try:
         cursor.execute(
-            """
+            f"""
             SELECT DISTINCT
                    d.tag_name,
                    d.type,
                    d.device_name,
                    d.port,
                    d.status,
+                   d.board_class,
+                   d.review_state,
                    COALESCE(d.usage_mode, 'free') AS usage_mode,
                    d.locked_by_user,
                    d.is_virtualized,
@@ -110,14 +129,10 @@ def _get_user_accessible_devices(conn, username: str) -> List[Dict]:
              AND a.user_id = %s
              AND a.is_active = TRUE
              AND a.expires_at > NOW()
-            WHERE COALESCE(d.usage_mode, 'free') = 'free'
-               OR (
-                    COALESCE(d.usage_mode, 'free') = 'share'
-                    AND a.user_id IS NOT NULL
-                  )
+            WHERE {" AND ".join(filters)}
             ORDER BY d.tag_name ASC
             """,
-            (username,),
+            tuple(params),
         )
         devices = cursor.fetchall()
         for device in devices:
@@ -199,10 +214,18 @@ def _queue_position(conn, row: Dict) -> Optional[int]:
         cursor.close()
 
 
-def list_eligible_devices(username: str) -> List[Dict]:
+def list_eligible_devices(username: str, board_type: str) -> List[Dict]:
+    normalized_board_type = (board_type or '').strip().lower()
+    if normalized_board_type not in SUPPORTED_BOARDS:
+        raise ValueError('Unsupported board type')
+
     conn = create_db_connection()
     try:
-        devices = [device for device in _get_user_accessible_devices(conn, username) if device['status'] == 'connected']
+        devices = [
+            device
+            for device in _get_user_accessible_devices(conn, username, normalized_board_type)
+            if device['status'] == 'connected'
+        ]
         stats_by_tag = _queue_stats_for_tags(conn, [device['tag_name'] for device in devices])
 
         result = []
@@ -211,6 +234,7 @@ def list_eligible_devices(username: str) -> List[Dict]:
             flashing_count = stats.get('flashing_count', 0)
             result.append({
                 **device,
+                'board_class': device.get('board_class'),
                 'usage_mode': _normalize_usage_mode(device.get('usage_mode')),
                 'queue_depth': stats.get('queue_depth', 0),
                 'waiting_count': stats.get('waiting_count', 0),
@@ -263,6 +287,10 @@ def enqueue_request(
         device = _get_device_by_tag(conn, tag_name)
         if not device:
             raise ValueError('Device not found')
+        if device.get('review_state') != 'approved':
+            raise ValueError('Device has not been approved for flashing')
+        if device.get('board_class') != board_type:
+            raise ValueError('Device board class does not match the selected board')
         usage_mode = _normalize_usage_mode(device.get('usage_mode'))
         if usage_mode == 'block':
             raise ValueError('This device is blocked and cannot receive flash requests')
@@ -285,7 +313,7 @@ def enqueue_request(
         request_id = cursor.lastrowid
         conn.commit()
 
-        cursor.execute('SELECT * FROM flash_queue WHERE id = %s', (request_id,))
+        cursor.execute('SELECT * FROM flash_queue WHERE id = %s LIMIT 1', (request_id,))
         return _serialize_request(cursor.fetchone())
     except Exception:
         conn.rollback()

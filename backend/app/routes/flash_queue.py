@@ -12,7 +12,16 @@ SUPPORTED_BAUD_RATES = (9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800
 @require_auth(role='user')
 def get_eligible_devices():
     username = request.current_user['username']
-    devices = flash_queue_service.list_eligible_devices(username)
+    board_type = (request.args.get('board_type') or '').strip().lower()
+    supported_board_types = tuple(sorted(flash_queue_service.SUPPORTED_BOARDS))
+
+    if board_type not in flash_queue_service.SUPPORTED_BOARDS:
+        return jsonify(
+            ok=False,
+            error=f'board_type is required and must be one of: {", ".join(supported_board_types)}',
+        ), 400
+
+    devices = flash_queue_service.list_eligible_devices(username, board_type)
     return jsonify(ok=True, devices=devices)
 
 

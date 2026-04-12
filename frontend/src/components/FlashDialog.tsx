@@ -40,6 +40,8 @@ const BOARD_OPTIONS = [
 
 const BAUD_RATE_OPTIONS = [9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800, 921600];
 
+const normalizeBoardValue = (value?: string | null) => (value || '').trim().toLowerCase();
+
 export const FlashDialog: React.FC<FlashDialogProps> = ({
   isOpen,
   projectName,
@@ -59,32 +61,61 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
   useEffect(() => {
     if (!isOpen) {
       setError('');
+      setBoard('');
+      setDevices([]);
+      setSelectedTag('');
       return;
     }
 
-    setBoard(initialBoard);
+    setBoard(normalizeBoardValue(initialBoard));
     setBaudRate(115200);
+    setError('');
+  }, [initialBoard, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !board) {
+      return;
+    }
+
+    let isCancelled = false;
+
     setLoading(true);
     setError('');
 
-    flashQueueAPI.listEligibleDevices()
+    flashQueueAPI.listEligibleDevices(board)
       .then((response) => {
-        const loadedDevices = response.data.devices || [];
-        setDevices(loadedDevices);
-        setSelectedTag((currentTag) => {
-          if (currentTag && loadedDevices.some((device) => device.tag_name === currentTag)) {
-            return currentTag;
-          }
-          return loadedDevices[0]?.tag_name || '';
-        });
+        if (isCancelled) {
+          return;
+        }
+        setDevices(response.data.devices || []);
       })
       .catch((err: any) => {
+        if (isCancelled) {
+          return;
+        }
         setError(err.response?.data?.error || err.message || 'Khong the tai danh sach thiet bi.');
         setDevices([]);
         setSelectedTag('');
       })
-      .finally(() => setLoading(false));
-  }, [initialBoard, isOpen]);
+      .finally(() => {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [board, isOpen]);
+
+  useEffect(() => {
+    setSelectedTag((currentTag) => {
+      if (currentTag && devices.some((device) => device.tag_name === currentTag)) {
+        return currentTag;
+      }
+      return devices[0]?.tag_name || '';
+    });
+  }, [devices]);
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.tag_name === selectedTag) || null,
@@ -97,10 +128,10 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
     }
 
     const activeResponse = await flashQueueAPI.getActiveRequest();
-    const activeRequest = activeResponse.data.request;
-    if (
-      activeRequest
-      && activeRequest.tag_name === selectedTag
+      const activeRequest = activeResponse.data.request;
+      if (
+        activeRequest
+        && activeRequest.tag_name === selectedTag
       && activeRequest.board_type === board
       && activeRequest.status !== 'cancelled'
     ) {
@@ -259,7 +290,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
                   color: 'var(--vscode-text-muted)',
                 }}
               >
-                Khong co thiet bi connected nao trong danh sach duoc phep su dung.
+                Khong co thiet bi approved nao phu hop voi board dang chon va quyen su dung hien tai.
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 10 }}>
@@ -283,12 +314,12 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>{device.device_name || device.tag_name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--vscode-text-muted)', marginTop: 4 }}>
-                            {device.tag_name} • {device.type} • {device.port || 'No port'}
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{device.device_name || device.tag_name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--vscode-text-muted)', marginTop: 4 }}>
+                              {device.tag_name} • {device.type} • {device.board_class || 'Unclassified'} • {device.port || 'No port'}
+                            </div>
                           </div>
-                        </div>
                         <div
                           style={{
                             padding: '4px 10px',

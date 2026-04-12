@@ -26,6 +26,8 @@ export interface FlashEligibleDevice {
   device_name?: string | null;
   port?: string | null;
   status: 'connected' | 'disconnected';
+  board_class: 'esp32' | 'esp8266' | 'arduino_uno' | null;
+  review_state?: 'pending_review' | 'approved';
   locked_by_user?: string | null;
   is_virtualized?: boolean;
   total_slots?: number;
@@ -52,8 +54,10 @@ interface EnqueueFlashRequestInput {
 }
 
 export const flashQueueAPI = {
-  listEligibleDevices: () =>
-    client.get<{ ok: boolean; devices: FlashEligibleDevice[] }>('/api/flash/devices'),
+  listEligibleDevices: (boardType: string) =>
+    client.get<{ ok: boolean; devices: FlashEligibleDevice[] }>('/api/flash/devices', {
+      params: { board_type: boardType },
+    }),
 
   enqueueRequest: (payload: EnqueueFlashRequestInput) =>
     client.post<{ ok: boolean; request: FlashQueueRequest }>('/api/flash/requests', payload),

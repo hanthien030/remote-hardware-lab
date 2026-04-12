@@ -419,25 +419,25 @@ Chỉ trả về:
 #### Schema & backend
 - [x] Thêm `board_class` và `review_state` vào bảng `devices`
 - [x] Logic: device mới phát hiện → `usage_mode = block`, `review_state = pending_review`
-- [ ] API: GET pending devices (admin only)
-- [ ] API: POST classify device (name + board_class → approved)
+- [x] API: GET pending devices (admin only)
+- [x] API: POST classify device (name + board_class → approved)
 
 #### Admin UI
-- [ ] Pending Review Box: hiển thị số thiết bị chờ (badge)
-- [ ] Pending Review Box: danh sách thiết bị pending với thông tin cơ bản
-- [ ] Form phân loại: nhập Device Name + chọn board_class + nút xác nhận
-- [ ] Sau classify: thiết bị rời Pending Box, xuất hiện trong Device Management
+- [x] Pending Review Box: hiển thị số thiết bị chờ (badge)
+- [x] Pending Review Box: danh sách thiết bị pending với thông tin cơ bản
+- [x] Form phân loại: nhập Device Name + chọn board_class + nút xác nhận
+- [x] Sau classify: thiết bị rời Pending Box, xuất hiện trong Device Management
 
 #### Device Management
-- [ ] Bảng chính chỉ hiện device `review_state = approved`
-- [ ] Thiết bị pending KHÔNG xuất hiện trong bảng chính
+- [x] Bảng chính chỉ hiện device `review_state = approved`
+- [x] Thiết bị pending KHÔNG xuất hiện trong bảng chính
 
 #### Flash Dialog
-- [ ] Filter: chỉ hiện device approved + connected + board_class khớp board đang chọn
-- [ ] Filter: vẫn áp dụng usage_mode / share permission checks hiện có
+- [x] Filter: backend-authoritative qua GET /api/flash/devices?board_type=... để chỉ hiện device approved + connected + board_class khớp board đang chọn
+- [x] Filter: vẫn áp dụng usage_mode / share permission checks hiện có
 
 #### Batch 2 wrap-up
-- [ ] Manual retest toàn bộ Batch 2 completed
+- [x] Manual retest toàn bộ Batch 2 completed
 
 ---
 
