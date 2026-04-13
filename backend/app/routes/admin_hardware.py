@@ -251,6 +251,36 @@ def approve_device(tag_name):
     return jsonify(ok=True, message='Device approved successfully.')
 
 
+@admin_hw_bp.route('/api/admin/devices/<string:tag_name>/reset-review', methods=['POST', 'OPTIONS'])
+def reset_device_review(tag_name):
+    success, message, status_code = hardware_service.reset_device_to_pending_review(tag_name)
+
+    if success:
+        log_action(
+            session['username'],
+            'Reset Device To Pending Review',
+            details={'tag_name': tag_name},
+        )
+        return jsonify(ok=True, message=message), status_code
+
+    return jsonify(ok=False, error=message), status_code
+
+
+@admin_hw_bp.route('/api/admin/devices/<string:tag_name>', methods=['DELETE', 'OPTIONS'])
+def delete_device_record(tag_name):
+    success, message, status_code = hardware_service.delete_device_record(tag_name)
+
+    if success:
+        log_action(
+            session['username'],
+            'Delete Device Record',
+            details={'tag_name': tag_name},
+        )
+        return jsonify(ok=True, message=message), status_code
+
+    return jsonify(ok=False, error=message), status_code
+
+
 @admin_hw_bp.route('/api/admin/assignments', methods=['POST', 'OPTIONS'])
 def assign_device():
     data = request.get_json()

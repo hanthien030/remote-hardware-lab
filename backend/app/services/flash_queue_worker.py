@@ -28,6 +28,7 @@ _worker_pid = None
 _active_devices: Set[str] = set()
 _active_devices_lock = threading.Lock()
 _serial_stop_events: Dict[str, threading.Event] = {}
+_serial_capture_ids: Dict[str, str] = {}
 _serial_stop_lock = threading.Lock()
 
 
@@ -54,25 +55,52 @@ def _release_device(tag_name: str) -> None:
         _active_devices.discard(tag_name)
 
 
-def _register_serial_stop_event(tag_name: str) -> threading.Event:
+def _serial_capture_id(request_id: int) -> str:
+    return f'flash-request-{request_id}'
+
+
+def _register_serial_capture_runtime(tag_name: str, capture_id: str) -> threading.Event:
     with _serial_stop_lock:
         stop_event = threading.Event()
         _serial_stop_events[tag_name] = stop_event
+        _serial_capture_ids[tag_name] = capture_id
         return stop_event
 
 
 def _clear_serial_stop_event(tag_name: str) -> None:
     with _serial_stop_lock:
         _serial_stop_events.pop(tag_name, None)
+        _serial_capture_ids.pop(tag_name, None)
+
+
+def _request_broker_serial_stop(capture_id: str) -> bool:
+    try:
+        response = requests.post(
+            f'{BROKER_URL}/serial-capture/stop',
+            json={'capture_id': capture_id},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json() or {}
+        return bool(payload.get('active_capture_found'))
+    except Exception as exc:
+        print(f'[FLASH_QUEUE] Failed to request broker serial stop for {capture_id}: {exc}')
+        return False
 
 
 def stop_serial_capture_for_device(tag_name: str) -> bool:
     with _serial_stop_lock:
         stop_event = _serial_stop_events.get(tag_name)
-        if not stop_event:
-            return False
+        capture_id = _serial_capture_ids.get(tag_name)
+
+    if not stop_event and not capture_id:
+        return False
+
+    if stop_event:
         stop_event.set()
-        return True
+    if capture_id:
+        _request_broker_serial_stop(capture_id)
+    return True
 
 
 def _load_flash_layout(request_row: Dict) -> Optional[Dict]:
@@ -174,6 +202,7 @@ def _run_serial_capture(
     baud_rate: int,
     total_seconds: int,
     stop_event: threading.Event,
+    capture_id: str,
 ) -> str:
     """
     Single HTTP call to broker for the full session duration.
@@ -187,30 +216,19 @@ def _run_serial_capture(
             'port': port,
             'duration_seconds': total_seconds,
             'baud_rate': baud_rate,
+            'capture_id': capture_id,
         },
         stream=True,
         timeout=(10, total_seconds + 30),
     )
     response.raise_for_status()
 
-    # Watcher thread: if stop_event fires while iter_lines() is blocked
-    # (board not printing anything), this closes the response to unblock the loop.
-    def _stop_watcher():
-        stop_event.wait()
-        try:
-            response.close()
-        except Exception:
-            pass
-
-    watcher = threading.Thread(target=_stop_watcher, daemon=True)
-    watcher.start()
-
     finish_reason = 'completed'
     last_ping_check = time.time()
 
     try:
         for raw_line in response.iter_lines(decode_unicode=True):
-            # Check stop_event first (user stopped or watcher unblocked us)
+            # Check stop_event first so worker-side stop requests short-circuit promptly.
             if stop_event.is_set():
                 _, reason = flash_serial_session.should_continue(request_id)
                 finish_reason = reason if reason else 'user_stopped'
@@ -262,9 +280,15 @@ def _run_serial_capture(
             _, reason = flash_serial_session.should_continue(request_id)
             finish_reason = reason if reason else 'user_stopped'
         else:
+            print(f'[FLASH_QUEUE] Serial capture stream error for request {request_id}: {exc}')
             finish_reason = 'error'
     finally:
         response.close()
+
+    if finish_reason == 'stopped':
+        _, reason = flash_serial_session.should_continue(request_id)
+        if reason == 'user_stopped':
+            finish_reason = 'user_stopped'
 
     return finish_reason
 
@@ -276,6 +300,7 @@ def _capture_serial_session(
     port: str,
     baud_rate: int,
     stop_event: threading.Event,
+    capture_id: str,
 ) -> str:
     flash_serial_session.start_session(request_id, username, tag_name, SERIAL_CAPTURE_SECONDS)
     flash_queue_service.append_log_output(
@@ -299,6 +324,7 @@ def _capture_serial_session(
             baud_rate=baud_rate,
             total_seconds=SERIAL_CAPTURE_SECONDS,
             stop_event=stop_event,
+            capture_id=capture_id,
         )
     finally:
         flash_serial_session.end_session(request_id)
@@ -370,7 +396,8 @@ def _process_candidate(request_id: int, tag_name: str):
         broker_data = broker_resp.json()
         bytes_written = broker_data.get('bytes_written', len(firmware_bytes))
         log_lines.append(f'Flash completed successfully. Bytes written: {bytes_written}')
-        stop_event = _register_serial_stop_event(tag_name)
+        capture_id = _serial_capture_id(request_id)
+        stop_event = _register_serial_capture_runtime(tag_name, capture_id)
         serial_reason = _capture_serial_session(
             request_id=request_id,
             username=username,
@@ -378,6 +405,7 @@ def _process_candidate(request_id: int, tag_name: str):
             port=device['port'],
             baud_rate=request_baud_rate,
             stop_event=stop_event,
+            capture_id=capture_id,
         )
 
         if serial_reason == 'completed':

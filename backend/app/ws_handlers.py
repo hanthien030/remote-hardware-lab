@@ -100,8 +100,6 @@ def on_flash_serial_pong(data):
 def broadcast_device_connected(tag_name: str, port: str, device_type: str):
     socketio.emit('device_connected', {
         'tag_name': tag_name,
-        'port': port,
-        'type': device_type,
         'status': 'connected',
     }, room='updates')
 
@@ -109,7 +107,6 @@ def broadcast_device_connected(tag_name: str, port: str, device_type: str):
 def broadcast_device_disconnected(tag_name: str, port: str):
     socketio.emit('device_disconnected', {
         'tag_name': tag_name,
-        'port': port,
         'status': 'disconnected',
     }, room='updates')
 

@@ -22,20 +22,12 @@ export interface FlashQueueRequest {
 
 export interface FlashEligibleDevice {
   tag_name: string;
-  type: string;
   device_name?: string | null;
-  port?: string | null;
   status: 'connected' | 'disconnected';
   board_class: 'esp32' | 'esp8266' | 'arduino_uno' | null;
-  review_state?: 'pending_review' | 'approved';
-  locked_by_user?: string | null;
-  is_virtualized?: boolean;
-  total_slots?: number;
-  expires_at?: string;
   queue_depth: number;
   waiting_count: number;
   flashing_count: number;
-  active_request_id?: number | null;
   is_busy: boolean;
 }
 

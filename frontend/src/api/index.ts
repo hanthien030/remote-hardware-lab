@@ -38,6 +38,12 @@ export const adminHardwareAPI = {
   approveDevice: (tagName: string, data: { device_name?: string | null; board_class: 'esp32' | 'esp8266' | 'arduino_uno' }) =>
     client.post(`/api/admin/devices/${encodeURIComponent(tagName)}/approve`, data),
 
+  resetDeviceReview: (tagName: string) =>
+    client.post(`/api/admin/devices/${encodeURIComponent(tagName)}/reset-review`),
+
+  deleteDeviceRecord: (tagName: string) =>
+    client.delete(`/api/admin/devices/${encodeURIComponent(tagName)}`),
+
   assignDevice: (deviceId: string, userId: string, expires_at?: string) =>
     client.post(`/api/admin/assignments`, { 
       user_id: userId,

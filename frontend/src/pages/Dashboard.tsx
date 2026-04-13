@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { userHardwareAPI } from '../api';
 import { useAuthStore } from '../store/authStore';
@@ -6,12 +6,20 @@ import { useDeviceSocket } from '../hooks/useDeviceSocket';
 import '../styles/Dashboard.css';
 
 interface Device {
-  id: string;
   tag_name: string;
-  device_name: string;
-  status: string;
-  created_at: string;
+  device_name?: string | null;
+  board_class?: 'esp32' | 'esp8266' | 'arduino_uno' | null;
+  status: 'connected' | 'disconnected';
 }
+
+const boardClassLabel = (value?: Device['board_class']) => {
+  if (value === 'esp32') return 'ESP32';
+  if (value === 'esp8266') return 'ESP8266';
+  if (value === 'arduino_uno') return 'Arduino Uno';
+  return 'Unclassified';
+};
+
+const deviceLabel = (device: Device) => (device.device_name || '').trim() || 'Unnamed device';
 
 export const Dashboard: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -22,7 +30,7 @@ export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const { onDeviceConnected, onDeviceDisconnected, onDeviceLocked, onDeviceUnlocked } = useDeviceSocket();
+  const { onDeviceConnected, onDeviceDisconnected } = useDeviceSocket();
 
   useEffect(() => {
     fetchDevices();
@@ -40,23 +48,11 @@ export const Dashboard: React.FC = () => {
         prev.map(d => d.tag_name === ev.tag_name ? { ...d, status: 'disconnected' } : d)
       );
     });
-    const unsubLocked = onDeviceLocked((ev) => {
-      setDevices(prev =>
-        prev.map(d => d.tag_name === ev.tag_name ? { ...d, locked_by_user: ev.locked_by } : d)
-      );
-    });
-    const unsubUnlocked = onDeviceUnlocked((ev) => {
-      setDevices(prev =>
-        prev.map(d => d.tag_name === ev.tag_name ? { ...d, locked_by_user: undefined } : d)
-      );
-    });
     return () => {
       unsubConnect();
       unsubDisconnect();
-      unsubLocked();
-      unsubUnlocked();
     };
-  }, [onDeviceConnected, onDeviceDisconnected, onDeviceLocked, onDeviceUnlocked]);
+  }, [onDeviceConnected, onDeviceDisconnected]);
 
   const fetchDevices = async () => {
     try {
@@ -130,11 +126,10 @@ export const Dashboard: React.FC = () => {
                   className="device-card"
                   style={{ cursor: 'default' }}
                 >
-                  <h3>{device.tag_name}</h3>
-                  <p className="device-name">{device.device_name}</p>
+                  <h3>{deviceLabel(device)}</h3>
+                  <p className="device-name">{boardClassLabel(device.board_class)}</p>
                   <div className="device-meta">
                     <span className={`status ${device.status}`}>{device.status}</span>
-                    <span className="created">{new Date(device.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="device-actions">
                     <button

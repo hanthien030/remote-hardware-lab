@@ -110,6 +110,8 @@ export const AdminPanel: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [usageSavingTag, setUsageSavingTag] = useState<string | null>(null);
   const [approvingTag, setApprovingTag] = useState<string | null>(null);
+  const [resettingTag, setResettingTag] = useState<string | null>(null);
+  const [deletingTag, setDeletingTag] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareUserId, setShareUserId] = useState('');
   const [shareExpiresAt, setShareExpiresAt] = useState('');
@@ -323,6 +325,38 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
+  const handleResetDeviceReview = async (device: Device) => {
+    if (!window.confirm(`Reset ${device.tag_name} back to Pending Review?`)) return;
+
+    setResettingTag(device.tag_name);
+    setError('');
+    try {
+      await adminHardwareAPI.resetDeviceReview(device.tag_name);
+      showSuccess(`Moved ${device.tag_name} back to Pending Review.`);
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to reset device review');
+    } finally {
+      setResettingTag(null);
+    }
+  };
+
+  const handleDeleteDeviceRecord = async (tagName: string) => {
+    if (!window.confirm(`Delete device record ${tagName}? This cannot be undone.`)) return;
+
+    setDeletingTag(tagName);
+    setError('');
+    try {
+      await adminHardwareAPI.deleteDeviceRecord(tagName);
+      showSuccess(`Deleted device record ${tagName}.`);
+      await fetchDevices();
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to delete device record');
+    } finally {
+      setDeletingTag(null);
+    }
+  };
+
   const handleDeleteUser = async (userId: string, username: string) => {
     if (username === currentUser?.username) {
       alert('Cannot delete your own account.');
@@ -385,6 +419,7 @@ export const AdminPanel: React.FC = () => {
                   {pendingDevices.map((device) => {
                     const draft = pendingDrafts[device.tag_name] || buildPendingDraft(device);
                     const isApproving = approvingTag === device.tag_name;
+                    const isDeleting = deletingTag === device.tag_name;
                     const metadataItems = [
                       { label: 'Chip Type', value: device.chip_type },
                       { label: 'MAC', value: device.mac_address },
@@ -438,13 +473,22 @@ export const AdminPanel: React.FC = () => {
                             </select>
                           </label>
 
-                          <button
-                            className="btn-primary"
-                            onClick={() => handleApprovePendingDevice(device)}
-                            disabled={isApproving || !draft.boardClass}
-                          >
-                            {isApproving ? 'Approving...' : 'Confirm & Approve'}
-                          </button>
+                          <div className="pending-review-form-actions">
+                            <button
+                              className="btn-primary"
+                              onClick={() => handleApprovePendingDevice(device)}
+                              disabled={isApproving || isDeleting || !draft.boardClass}
+                            >
+                              {isApproving ? 'Approving...' : 'Confirm & Approve'}
+                            </button>
+                            <button
+                              className="btn-danger"
+                              onClick={() => handleDeleteDeviceRecord(device.tag_name)}
+                              disabled={isApproving || isDeleting}
+                            >
+                              {isDeleting ? 'Deleting...' : 'Delete Record'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -517,12 +561,28 @@ export const AdminPanel: React.FC = () => {
                               )}
                             </td>
                             <td>
-                              <button
-                                className="btn-secondary"
-                                onClick={() => openEditModal(device)}
-                              >
-                                Edit name
-                              </button>
+                              <div className="admin-table-actions">
+                                <button
+                                  className="btn-secondary"
+                                  onClick={() => openEditModal(device)}
+                                >
+                                  Edit name
+                                </button>
+                                <button
+                                  className="btn-secondary"
+                                  onClick={() => handleResetDeviceReview(device)}
+                                  disabled={resettingTag === device.tag_name || deletingTag === device.tag_name}
+                                >
+                                  {resettingTag === device.tag_name ? 'Resetting...' : 'Reset to Pending'}
+                                </button>
+                                <button
+                                  className="btn-danger"
+                                  onClick={() => handleDeleteDeviceRecord(device.tag_name)}
+                                  disabled={resettingTag === device.tag_name || deletingTag === device.tag_name}
+                                >
+                                  {deletingTag === device.tag_name ? 'Deleting...' : 'Delete Record'}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );

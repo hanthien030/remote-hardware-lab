@@ -5,9 +5,10 @@ import re
 import struct
 import subprocess
 import tempfile
+import threading
 import time
 import shutil
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import serial
 from fastapi import FastAPI, HTTPException
@@ -45,6 +46,11 @@ class SerialCaptureRequest(BaseModel):
     port: str
     duration_seconds: int
     baud_rate: Optional[int] = 115200
+    capture_id: Optional[str] = None
+
+
+class SerialCaptureStopRequest(BaseModel):
+    capture_id: str
 
 
 class FlashSegment(BaseModel):
@@ -62,6 +68,9 @@ class FlashLayout(BaseModel):
 
 
 FlashRequest.model_rebuild()
+
+_serial_capture_stop_events: Dict[str, threading.Event] = {}
+_serial_capture_lock = threading.Lock()
 
 
 def flash_virtualized_device(request: FlashRequest):
@@ -209,7 +218,36 @@ def flash_non_virtualized_layout(request: FlashRequest):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _serial_capture_stream(request: SerialCaptureRequest):
+def _register_serial_capture_stop_event(capture_id: Optional[str]):
+    if not capture_id:
+        return None
+
+    stop_event = threading.Event()
+    with _serial_capture_lock:
+        _serial_capture_stop_events[capture_id] = stop_event
+    return stop_event
+
+
+def _clear_serial_capture_stop_event(capture_id: Optional[str]):
+    if not capture_id:
+        return
+
+    with _serial_capture_lock:
+        _serial_capture_stop_events.pop(capture_id, None)
+
+
+def _request_serial_capture_stop(capture_id: str) -> bool:
+    with _serial_capture_lock:
+        stop_event = _serial_capture_stop_events.get(capture_id)
+
+    if not stop_event:
+        return False
+
+    stop_event.set()
+    return True
+
+
+def _serial_capture_stream(request: SerialCaptureRequest, stop_event: Optional[threading.Event] = None):
     connection = None
     bytes_captured = 0
 
@@ -239,8 +277,23 @@ def _serial_capture_stream(request: SerialCaptureRequest):
 
         deadline = time.time() + duration_seconds
         while time.time() < deadline:
+            if stop_event and stop_event.is_set():
+                yield json.dumps({
+                    'type': 'finished',
+                    'reason': 'stopped',
+                    'bytes_captured': bytes_captured,
+                }) + '\n'
+                return
+
             pending = connection.in_waiting
             chunk = connection.read(pending or 1)
+            if not chunk and stop_event and stop_event.is_set():
+                yield json.dumps({
+                    'type': 'finished',
+                    'reason': 'stopped',
+                    'bytes_captured': bytes_captured,
+                }) + '\n'
+                return
             if not chunk:
                 continue
 
@@ -276,6 +329,7 @@ def _serial_capture_stream(request: SerialCaptureRequest):
     finally:
         if connection and connection.is_open:
             connection.close()
+        _clear_serial_capture_stop_event(request.capture_id)
 
 
 @app.get('/healthcheck', tags=['Status'])
@@ -378,7 +432,19 @@ def serial_capture(request: SerialCaptureRequest):
     if request.duration_seconds <= 0:
         raise HTTPException(status_code=400, detail='duration_seconds must be positive')
 
+    stop_event = _register_serial_capture_stop_event(request.capture_id)
+
     return StreamingResponse(
-        _serial_capture_stream(request),
+        _serial_capture_stream(request, stop_event),
         media_type='application/x-ndjson',
     )
+
+
+@app.post('/serial-capture/stop', tags=['Device Actions'])
+def stop_serial_capture(request: SerialCaptureStopRequest):
+    active_capture_found = _request_serial_capture_stop(request.capture_id)
+    return {
+        'status': 'ok',
+        'capture_id': request.capture_id,
+        'active_capture_found': active_capture_found,
+    }

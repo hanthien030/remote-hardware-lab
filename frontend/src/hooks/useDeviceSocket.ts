@@ -5,14 +5,11 @@ const WS_URL = `${window.location.protocol}//${window.location.host}`;
 
 export interface DeviceConnectedEvent {
   tag_name: string;
-  port: string;
-  type: string;
   status: 'connected';
 }
 
 export interface DeviceDisconnectedEvent {
   tag_name: string;
-  port: string;
   status: 'disconnected';
 }
 

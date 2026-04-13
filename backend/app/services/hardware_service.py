@@ -4,6 +4,7 @@ import os
 
 import requests
 from app.db import get_db_connection
+from app.services.flash_queue_service import ACTIVE_STATUSES
 from mysql.connector.errors import IntegrityError
 
 # Lay URL cua Broker tu bien moi truong
@@ -327,8 +328,7 @@ def get_user_assignments(username):
     cursor = db.cursor(dictionary=True)
 
     sql = """
-        SELECT d.tag_name, d.type, d.device_name, d.port, d.status,
-               d.locked_by_user, a.expires_at
+        SELECT d.tag_name, d.device_name, d.board_class, d.status
         FROM assignments a
         JOIN devices d ON a.tag_name = d.tag_name
         WHERE a.user_id = %s AND a.is_active = TRUE AND a.expires_at > NOW()
@@ -357,6 +357,93 @@ def get_device_by_port(port):
     device = cursor.fetchone()
     cursor.close()
     return device
+
+
+def _count_active_flash_requests(cursor, tag_name):
+    placeholders = ", ".join(["%s"] * len(ACTIVE_STATUSES))
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) AS active_count
+        FROM flash_queue
+        WHERE tag_name = %s AND status IN ({placeholders})
+        """,
+        (tag_name, *ACTIVE_STATUSES),
+    )
+    row = cursor.fetchone() or {}
+    return int(row.get("active_count") or 0)
+
+
+def reset_device_to_pending_review(tag_name):
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM devices WHERE tag_name = %s", (tag_name,))
+        device = cursor.fetchone()
+
+        if not device:
+            return False, "Device not found.", 404
+        if device.get("review_state") != "approved":
+            return False, "Only approved devices can be reset to pending review.", 409
+        if _count_active_flash_requests(cursor, tag_name) > 0:
+            return False, "Device has an active flash request and cannot be reset right now.", 409
+        if device.get("locked_by_user"):
+            return False, "Device is currently locked and cannot be reset.", 409
+        if device.get("in_use_by"):
+            return False, "Device is currently in use and cannot be reset.", 409
+
+        cursor.execute(
+            """
+            UPDATE devices
+            SET review_state = 'pending_review',
+                board_class = NULL,
+                usage_mode = 'block'
+            WHERE tag_name = %s AND review_state = 'approved'
+            """,
+            (tag_name,),
+        )
+        if cursor.rowcount != 1:
+            db.rollback()
+            return False, "Device reset failed.", 409
+
+        db.commit()
+        return True, "Device moved back to pending review.", 200
+    except Exception as e:
+        db.rollback()
+        return False, str(e), 500
+    finally:
+        cursor.close()
+
+
+def delete_device_record(tag_name):
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM devices WHERE tag_name = %s", (tag_name,))
+        device = cursor.fetchone()
+
+        if not device:
+            return False, "Device not found.", 404
+        if _count_active_flash_requests(cursor, tag_name) > 0:
+            return False, "Device has an active flash request and cannot be deleted.", 409
+        if device.get("locked_by_user"):
+            return False, "Device is currently locked and cannot be deleted.", 409
+        if device.get("in_use_by"):
+            return False, "Device is currently in use and cannot be deleted.", 409
+        if device.get("status") != "disconnected":
+            return False, "Device must be disconnected before deletion.", 409
+
+        cursor.execute("DELETE FROM devices WHERE tag_name = %s", (tag_name,))
+        if cursor.rowcount != 1:
+            db.rollback()
+            return False, "Device deletion failed.", 409
+
+        db.commit()
+        return True, "Device record deleted successfully.", 200
+    except Exception as e:
+        db.rollback()
+        return False, str(e), 500
+    finally:
+        cursor.close()
 
 
 def lock_device(tag_name, username):

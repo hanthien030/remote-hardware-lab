@@ -42,6 +42,19 @@ const BAUD_RATE_OPTIONS = [9600, 19200, 38400, 57600, 74880, 115200, 230400, 460
 
 const normalizeBoardValue = (value?: string | null) => (value || '').trim().toLowerCase();
 
+const boardLabel = (value?: FlashEligibleDevice['board_class']) => {
+  if (value === 'esp32') return 'ESP32';
+  if (value === 'esp8266') return 'ESP8266';
+  if (value === 'arduino_uno') return 'Arduino Uno';
+  return 'Unclassified';
+};
+
+const deviceLabel = (device: Pick<FlashEligibleDevice, 'device_name'>) =>
+  (device.device_name || '').trim() || 'Unnamed device';
+
+const connectionLabel = (status: FlashEligibleDevice['status']) =>
+  status === 'connected' ? 'Connected' : 'Disconnected';
+
 export const FlashDialog: React.FC<FlashDialogProps> = ({
   isOpen,
   projectName,
@@ -128,10 +141,10 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
     }
 
     const activeResponse = await flashQueueAPI.getActiveRequest();
-      const activeRequest = activeResponse.data.request;
-      if (
-        activeRequest
-        && activeRequest.tag_name === selectedTag
+    const activeRequest = activeResponse.data.request;
+    if (
+      activeRequest
+      && activeRequest.tag_name === selectedTag
       && activeRequest.board_type === board
       && activeRequest.status !== 'cancelled'
     ) {
@@ -199,7 +212,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--vscode-text-main)' }}>Queue Flash Request</div>
             <div style={{ fontSize: 12, color: 'var(--vscode-text-muted)', marginTop: 4 }}>
-              Project: {projectName} • Firmware: {firmwarePath}
+              Project: {projectName} | Firmware: {firmwarePath}
             </div>
           </div>
           <button
@@ -213,7 +226,7 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
               lineHeight: 1,
             }}
           >
-            ×
+            x
           </button>
         </div>
 
@@ -296,8 +309,9 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
               <div style={{ display: 'grid', gap: 10 }}>
                 {devices.map((device) => {
                   const selected = device.tag_name === selectedTag;
-                  const busyLabel = device.is_busy ? `Dang dung (${device.queue_depth})` : 'Ranh';
-                  const queueLabel = device.queue_depth > 0 ? ` • Queue: ${device.queue_depth}` : '';
+                  const busyLabel = device.is_busy ? `Busy (${device.queue_depth})` : 'Ready';
+                  const queueLabel = device.queue_depth > 0 ? ` | Queue: ${device.queue_depth}` : '';
+
                   return (
                     <button
                       key={device.tag_name}
@@ -314,12 +328,12 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                          <div>
-                            <div style={{ fontWeight: 700 }}>{device.device_name || device.tag_name}</div>
-                            <div style={{ fontSize: 12, color: 'var(--vscode-text-muted)', marginTop: 4 }}>
-                              {device.tag_name} • {device.type} • {device.board_class || 'Unclassified'} • {device.port || 'No port'}
-                            </div>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{deviceLabel(device)}</div>
+                          <div style={{ fontSize: 12, color: 'var(--vscode-text-muted)', marginTop: 4 }}>
+                            {boardLabel(device.board_class)} | {connectionLabel(device.status)}
                           </div>
+                        </div>
                         <div
                           style={{
                             padding: '4px 10px',
@@ -331,7 +345,8 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {busyLabel}{queueLabel}
+                          {busyLabel}
+                          {queueLabel}
                         </div>
                       </div>
                     </button>
@@ -356,9 +371,10 @@ export const FlashDialog: React.FC<FlashDialogProps> = ({
               <div style={{ fontSize: 12, color: 'var(--vscode-text-muted)', textTransform: 'uppercase' }}>
                 Tong quan request
               </div>
+              <div>Device: <strong>{deviceLabel(selectedDevice)}</strong></div>
               <div>Board: <strong>{BOARD_OPTIONS.find((option) => option.value === board)?.label || board}</strong></div>
+              <div>Status: <strong>{connectionLabel(selectedDevice.status)}</strong></div>
               <div>Baud rate: <strong>{baudRate}</strong></div>
-              <div>Tag: <strong>{selectedDevice.tag_name}</strong></div>
               <div>Queue depth hien tai: <strong>{selectedDevice.queue_depth}</strong></div>
             </section>
           )}

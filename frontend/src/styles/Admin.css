@@ -152,6 +152,13 @@
   align-items: end;
 }
 
+.pending-review-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .pending-review-metadata {
   display: flex;
   flex-wrap: wrap;
@@ -405,6 +412,12 @@
   gap: 8px;
 }
 
+.admin-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-table button {
   padding: 6px 12px;
   font-size: 12px;
@@ -554,6 +567,10 @@
 
   .pending-review-form {
     grid-template-columns: 1fr;
+  }
+
+  .pending-review-form-actions {
+    width: 100%;
   }
 
   .pending-review-meta-pill {

@@ -111,18 +111,11 @@ def _get_user_accessible_devices(conn, username: str, board_type: Optional[str] 
             f"""
             SELECT DISTINCT
                    d.tag_name,
-                   d.type,
                    d.device_name,
-                   d.port,
                    d.status,
                    d.board_class,
-                   d.review_state,
                    COALESCE(d.usage_mode, 'free') AS usage_mode,
-                   d.locked_by_user,
-                   d.is_virtualized,
-                   d.total_slots,
-                   a.expires_at,
-                   CASE WHEN a.user_id IS NULL THEN FALSE ELSE TRUE END AS is_assigned
+                   d.locked_by_user
             FROM devices d
             LEFT JOIN assignments a
               ON a.tag_name = d.tag_name
@@ -233,13 +226,13 @@ def list_eligible_devices(username: str, board_type: str) -> List[Dict]:
             stats = stats_by_tag.get(device['tag_name'], {})
             flashing_count = stats.get('flashing_count', 0)
             result.append({
-                **device,
+                'tag_name': device['tag_name'],
+                'device_name': device.get('device_name'),
+                'status': device.get('status'),
                 'board_class': device.get('board_class'),
-                'usage_mode': _normalize_usage_mode(device.get('usage_mode')),
                 'queue_depth': stats.get('queue_depth', 0),
                 'waiting_count': stats.get('waiting_count', 0),
                 'flashing_count': flashing_count,
-                'active_request_id': stats.get('active_request_id'),
                 'is_busy': bool(device.get('locked_by_user')) or flashing_count > 0,
             })
         return result
