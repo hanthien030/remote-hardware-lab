@@ -283,9 +283,40 @@ def health_check():
     return {'status': 'ok', 'message': 'Broker is running!'}
 
 
+def _empty_probe_response():
+    return {
+        'probe_success': False,
+        'chip_type': None,
+        'chip_family': None,
+        'mac_address': None,
+        'flash_size': None,
+        'crystal_freq': None,
+    }
+
+
+def _extract_probe_field(pattern: str, output: str):
+    match = re.search(pattern, output, re.IGNORECASE)
+    if not match:
+        return None
+    value = (match.group(1) or '').strip()
+    return value or None
+
+
+def _map_chip_family(chip_type: Optional[str]):
+    if not chip_type:
+        return None
+
+    normalized = chip_type.upper()
+    if 'ESP32' in normalized:
+        return 'esp32'
+    if 'ESP8266' in normalized:
+        return 'esp8266'
+    return 'unknown'
+
+
 @app.post('/interrogate', tags=['Device Actions'])
 def interrogate_device(request: InterrogateRequest):
-    command = ['esptool.py', '--port', request.port, 'chip_id']
+    command = ['esptool', '--port', request.port, 'flash-id']
     try:
         result = subprocess.run(
             command,
@@ -294,21 +325,25 @@ def interrogate_device(request: InterrogateRequest):
             check=True,
             timeout=15,
         )
-
-        mac_match = re.search(
-            r'MAC:\s+([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})',
-            result.stdout,
-            re.IGNORECASE,
+        output = '\n'.join(part for part in [result.stdout, result.stderr] if part)
+        chip_type = _extract_probe_field(r'Chip type:\s*(.+)', output)
+        mac_address = _extract_probe_field(
+            r'MAC:\s*([0-9a-f]{2}(?::[0-9a-f]{2}){5})',
+            output,
         )
+        flash_size = _extract_probe_field(r'Detected flash size:\s*(.+)', output)
+        crystal_freq = _extract_probe_field(r'Crystal frequency:\s*(.+)', output)
 
-        if mac_match:
-            return {'status': 'ok', 'mac_address': mac_match.group(1).lower()}
-
-        raise HTTPException(status_code=404, detail='Could not find MAC address in esptool output.')
-    except subprocess.CalledProcessError as exc:
-        raise HTTPException(status_code=500, detail=f'esptool failed: {exc.stderr or "No error output"}')
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail='Device interrogation timed out.')
+        return {
+            'probe_success': True,
+            'chip_type': chip_type,
+            'chip_family': _map_chip_family(chip_type),
+            'mac_address': mac_address.lower() if mac_address else None,
+            'flash_size': flash_size,
+            'crystal_freq': crystal_freq,
+        }
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return _empty_probe_response()
 
 
 @app.post('/ping', tags=['Debug'])

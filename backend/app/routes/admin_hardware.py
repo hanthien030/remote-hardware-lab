@@ -103,7 +103,9 @@ def get_pending_devices():
     try:
         cursor.execute(
             """
-            SELECT tag_name, device_name, type, port, status, usage_mode, board_class, review_state, created_at, last_seen
+            SELECT tag_name, device_name, type, port, status, usage_mode,
+                   board_class, review_state, chip_type, chip_family,
+                   mac_address, flash_size, crystal_freq, created_at, last_seen
             FROM devices
             WHERE review_state = 'pending_review'
             ORDER BY created_at DESC, tag_name ASC

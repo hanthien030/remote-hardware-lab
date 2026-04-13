@@ -34,6 +34,11 @@ interface PendingDevice {
   status: string;
   usage_mode: UsageMode;
   board_class?: BoardClass | null;
+  chip_type?: string | null;
+  chip_family?: string | null;
+  mac_address?: string | null;
+  flash_size?: string | null;
+  crystal_freq?: string | null;
   review_state: 'pending_review' | 'approved';
   created_at?: string;
 }
@@ -79,6 +84,20 @@ const boardClassLabel = (value: BoardClass) => {
   if (value === 'arduino_uno') return 'Arduino Uno';
   return 'ESP32';
 };
+
+const getPendingDraftBoardClass = (device: PendingDevice): PendingReviewDraft['boardClass'] => {
+  if (device.board_class === 'esp32' || device.board_class === 'esp8266') {
+    return device.board_class;
+  }
+  return '';
+};
+
+const buildPendingDraft = (device: PendingDevice, existingDraft?: PendingReviewDraft): PendingReviewDraft => ({
+  deviceNameInput: existingDraft?.deviceNameInput ?? device.device_name ?? '',
+  boardClass: existingDraft?.boardClass ?? getPendingDraftBoardClass(device),
+});
+
+const renderPendingMetadataValue = (value?: string | null) => value || '—';
 
 export const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'devices' | 'users'>('devices');
@@ -132,11 +151,7 @@ export const AdminPanel: React.FC = () => {
       setPendingDrafts((currentDrafts) => {
         const nextDrafts: Record<string, PendingReviewDraft> = {};
         nextPendingDevices.forEach((device) => {
-          const existingDraft = currentDrafts[device.tag_name];
-          nextDrafts[device.tag_name] = existingDraft || {
-            deviceNameInput: device.device_name || '',
-            boardClass: '',
-          };
+          nextDrafts[device.tag_name] = buildPendingDraft(device, currentDrafts[device.tag_name]);
         });
         return nextDrafts;
       });
@@ -286,7 +301,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   const handleApprovePendingDevice = async (device: PendingDevice) => {
-    const draft = pendingDrafts[device.tag_name] || { deviceNameInput: device.device_name || '', boardClass: '' };
+    const draft = pendingDrafts[device.tag_name] || buildPendingDraft(device);
     if (!draft.boardClass) {
       setError(`Please choose a board class for ${device.tag_name}.`);
       return;
@@ -368,8 +383,14 @@ export const AdminPanel: React.FC = () => {
               ) : (
                 <div className="pending-review-list">
                   {pendingDevices.map((device) => {
-                    const draft = pendingDrafts[device.tag_name] || { deviceNameInput: device.device_name || '', boardClass: '' };
+                    const draft = pendingDrafts[device.tag_name] || buildPendingDraft(device);
                     const isApproving = approvingTag === device.tag_name;
+                    const metadataItems = [
+                      { label: 'Chip Type', value: device.chip_type },
+                      { label: 'MAC', value: device.mac_address },
+                      { label: 'Flash', value: device.flash_size },
+                      { label: 'Crystal', value: device.crystal_freq },
+                    ];
                     return (
                       <div key={device.tag_name} className="pending-review-item">
                         <div className="pending-review-item-header">
@@ -380,6 +401,15 @@ export const AdminPanel: React.FC = () => {
                             </div>
                           </div>
                           <span className="usage-badge usage-block">Blocked</span>
+                        </div>
+
+                        <div className="pending-review-metadata">
+                          {metadataItems.map((item) => (
+                            <div key={`${device.tag_name}-${item.label}`} className="pending-review-meta-pill">
+                              <span className="pending-review-meta-label">{item.label}</span>
+                              <span className="pending-review-meta-value">{renderPendingMetadataValue(item.value)}</span>
+                            </div>
+                          ))}
                         </div>
 
                         <div className="pending-review-form">
