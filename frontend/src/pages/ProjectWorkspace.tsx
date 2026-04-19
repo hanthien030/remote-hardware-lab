@@ -296,12 +296,21 @@ export const ProjectWorkspace: React.FC = () => {
   const hasActiveRequest = Boolean(activeRequest);
   const isWaitingRequest = activeRequest?.status === 'waiting';
   const isFlashingRequest = activeRequest?.status === 'flashing';
-  const boardSupportsQueueFlash = selectedBoard === 'esp32' || selectedBoard === 'esp8266';
+  const expectedArtifactExt = selectedBoard === 'arduino_uno' ? '.hex' : '.bin';
+  const boardSupportsQueueFlash =
+    selectedBoard === 'esp32' || selectedBoard === 'esp8266' || selectedBoard === 'arduino_uno';
   const compiledArtifactMatchesBoard = Boolean(
     lastCompileArtifact?.path && lastCompileArtifact.board === selectedBoard
   );
-  const hasCompileArtifactReady = Boolean(lastCompileArtifact?.path) && compiledArtifactMatchesBoard;
-  const isCompileOnlyBoard = hasCompileArtifactReady && !boardSupportsQueueFlash;
+  const compiledArtifactExt =
+    (lastCompileArtifact?.artifactExt || '').toLowerCase()
+    || (lastCompileArtifact?.path
+      ? lastCompileArtifact.path.slice(lastCompileArtifact.path.lastIndexOf('.')).toLowerCase()
+      : '');
+  const hasCompileArtifactReady =
+    Boolean(lastCompileArtifact?.path)
+    && compiledArtifactMatchesBoard
+    && compiledArtifactExt === expectedArtifactExt;
   const canOpenFlashDialog = hasCompileArtifactReady && boardSupportsQueueFlash && !hasActiveRequest;
   const workspaceActionLabel = hasActiveRequest ? '⬛ HỦY' : '⚡ Nạp';
   const workspaceActionDisabled = activeRequestLoading
@@ -314,8 +323,8 @@ export const ProjectWorkspace: React.FC = () => {
       : 'The request is already flashing. Open /history to follow progress'
     : !compiledArtifactMatchesBoard
       ? `Compile successfully for ${selectedBoard} before sending a flash request`
-    : isCompileOnlyBoard
-      ? 'Arduino Uno compile is ready, but flashing will be added later via avrdude'
+    : compiledArtifactExt !== expectedArtifactExt
+      ? `Compile must produce a ${expectedArtifactExt} artifact for ${selectedBoard} before sending a flash request`
     : hasCompileArtifactReady
       ? 'Send the compiled firmware into the flash queue'
       : 'Compile successfully before sending a flash request';
@@ -554,32 +563,6 @@ export const ProjectWorkspace: React.FC = () => {
                         <button type="button" className="btn-back" onClick={() => navigate('/history')}>
                           Open /history
                         </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {!activeRequest && isCompileOnlyBoard && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: 12,
-                        flexWrap: 'wrap',
-                        padding: '10px 12px',
-                        borderRadius: 8,
-                        border: '1px solid rgba(59, 130, 246, 0.35)',
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        color: 'var(--vscode-text-main)',
-                      }}
-                    >
-                      <div style={{ display: 'grid', gap: 4 }}>
-                        <div style={{ fontSize: 12, textTransform: 'uppercase', fontWeight: 700, color: '#93c5fd' }}>
-                          Compile-only board
-                        </div>
-                        <div style={{ fontSize: 13 }}>
-                          Arduino Uno compile succeeded and saved <strong>{lastCompileArtifact?.path}</strong>. Flashing stays disabled in this batch and will be added later via avrdude.
-                        </div>
                       </div>
                     </div>
                   )}

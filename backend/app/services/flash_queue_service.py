@@ -12,6 +12,11 @@ SUPPORTED_BAUD_RATES = {9600, 19200, 38400, 57600, 74880, 115200, 230400, 460800
 DEFAULT_BAUD_RATE = 115200
 ACTIVE_STATUSES = ('waiting', 'flashing')
 USAGE_MODES = {'free', 'share', 'block'}
+BOARD_FIRMWARE_EXTENSIONS = {
+    'esp32': '.bin',
+    'esp8266': '.bin',
+    'arduino_uno': '.hex',
+}
 
 
 def _dict_cursor(conn):
@@ -46,7 +51,7 @@ def _derive_project_name(username: str, firmware_path: str) -> Optional[str]:
     return parts[0] if parts else None
 
 
-def _safe_workspace_file(username: str, project_name: str, firmware_path: str) -> str:
+def _safe_workspace_file(username: str, project_name: str, firmware_path: str, board_type: str) -> str:
     if not SAFE_NAME_RE.match(username) or not SAFE_NAME_RE.match(project_name):
         raise ValueError('Invalid username or project_name')
     if not SAFE_PATH_RE.match(firmware_path):
@@ -57,10 +62,13 @@ def _safe_workspace_file(username: str, project_name: str, firmware_path: str) -
 
     if not full_path.startswith(workspace_dir + os.sep):
         raise ValueError('Path traversal detected')
-    if not full_path.lower().endswith('.bin'):
-        raise ValueError('Firmware path must point to a .bin file')
+    expected_extension = BOARD_FIRMWARE_EXTENSIONS.get(board_type)
+    if not expected_extension:
+        raise ValueError('Unsupported board type')
+    if not full_path.lower().endswith(expected_extension):
+        raise ValueError(f'Firmware path must point to a {expected_extension} file for {board_type}')
     if not os.path.isfile(full_path):
-        raise FileNotFoundError('Compiled firmware .bin file not found')
+        raise FileNotFoundError(f'Compiled firmware {expected_extension} file not found')
 
     return full_path
 
@@ -253,7 +261,7 @@ def enqueue_request(
     if baud_rate not in SUPPORTED_BAUD_RATES:
         raise ValueError('Unsupported baud rate')
 
-    resolved_path = _safe_workspace_file(username, project_name, firmware_path)
+        resolved_path = _safe_workspace_file(username, project_name, firmware_path, board_type)
     conn = create_db_connection()
     cursor = _dict_cursor(conn)
     user_lock_acquired = False

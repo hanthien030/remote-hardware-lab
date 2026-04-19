@@ -26,6 +26,8 @@ app = FastAPI(
 
 class FlashRequest(BaseModel):
     port: str
+    board_type: Optional[str] = None
+    baud_rate: Optional[int] = 115200
     firmware_base64: Optional[str] = None
     is_virtualized: bool
     slot_id: Optional[int] = None
@@ -117,9 +119,16 @@ def flash_virtualized_device(request: FlashRequest):
 
 
 def flash_non_virtualized_device(request: FlashRequest):
+    normalized_board = (request.board_type or 'esp32').strip().lower()
+
+    if normalized_board == 'arduino_uno':
+        return flash_non_virtualized_arduino_uno(request)
     if request.flash_layout and request.flash_layout.segments:
         return flash_non_virtualized_layout(request)
+    return flash_non_virtualized_esp(request)
 
+
+def flash_non_virtualized_esp(request: FlashRequest):
     if not request.firmware_base64:
         raise HTTPException(status_code=400, detail='firmware_base64 is required')
 
@@ -160,6 +169,56 @@ def flash_non_virtualized_device(request: FlashRequest):
         )
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail='esptool command timed out.')
+    finally:
+        if os.path.exists(tmp_file_path):
+            os.remove(tmp_file_path)
+
+
+def flash_non_virtualized_arduino_uno(request: FlashRequest):
+    if not request.firmware_base64:
+        raise HTTPException(status_code=400, detail='firmware_base64 is required')
+
+    firmware_bytes = base64.b64decode(request.firmware_base64)
+    baud_rate = int(request.baud_rate or 115200)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.hex') as tmp_file:
+        tmp_file.write(firmware_bytes)
+        tmp_file_path = tmp_file.name
+
+    try:
+        command = [
+            'avrdude',
+            '-p', 'atmega328p',
+            '-c', 'arduino',
+            '-P', request.port,
+            '-b', str(baud_rate),
+            '-U', f'flash:w:{tmp_file_path}:i',
+        ]
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+
+        return {
+            'status': 'ok',
+            'message': 'Flashed successfully using avrdude.',
+            'bytes_written': len(firmware_bytes),
+            'stdout': result.stdout,
+            'stderr': result.stderr,
+        }
+    except subprocess.CalledProcessError as exc:
+        stderr_out = exc.stderr or ''
+        stdout_out = exc.stdout or ''
+        raise HTTPException(
+            status_code=500,
+            detail=f"avrdude failed: {stderr_out or stdout_out or 'unknown error'}",
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail='avrdude command timed out.')
     finally:
         if os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)

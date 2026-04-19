@@ -368,6 +368,8 @@ def _process_candidate(request_id: int, tag_name: str):
 
         broker_payload = {
             'port': device['port'],
+            'board_type': request_row['board_type'],
+            'baud_rate': request_baud_rate,
             'firmware_base64': base64.b64encode(firmware_bytes).decode('ascii'),
             'is_virtualized': bool(device.get('is_virtualized')),
             'slot_id': slot_id,
