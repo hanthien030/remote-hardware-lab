@@ -86,7 +86,11 @@ const boardClassLabel = (value: BoardClass) => {
 };
 
 const getPendingDraftBoardClass = (device: PendingDevice): PendingReviewDraft['boardClass'] => {
-  if (device.board_class === 'esp32' || device.board_class === 'esp8266') {
+  if (
+    device.board_class === 'esp32'
+    || device.board_class === 'esp8266'
+    || device.board_class === 'arduino_uno'
+  ) {
     return device.board_class;
   }
   return '';
@@ -94,7 +98,7 @@ const getPendingDraftBoardClass = (device: PendingDevice): PendingReviewDraft['b
 
 const buildPendingDraft = (device: PendingDevice, existingDraft?: PendingReviewDraft): PendingReviewDraft => ({
   deviceNameInput: existingDraft?.deviceNameInput ?? device.device_name ?? '',
-  boardClass: existingDraft?.boardClass ?? getPendingDraftBoardClass(device),
+  boardClass: existingDraft?.boardClass || getPendingDraftBoardClass(device),
 });
 
 const renderPendingMetadataValue = (value?: string | null) => value || '—';
@@ -110,8 +114,10 @@ export const AdminPanel: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [usageSavingTag, setUsageSavingTag] = useState<string | null>(null);
   const [approvingTag, setApprovingTag] = useState<string | null>(null);
+  const [checkingTag, setCheckingTag] = useState<string | null>(null);
   const [resettingTag, setResettingTag] = useState<string | null>(null);
   const [deletingTag, setDeletingTag] = useState<string | null>(null);
+  const [pendingCheckNotes, setPendingCheckNotes] = useState<Record<string, string>>({});
   const [shareLoading, setShareLoading] = useState(false);
   const [shareUserId, setShareUserId] = useState('');
   const [shareExpiresAt, setShareExpiresAt] = useState('');
@@ -156,6 +162,15 @@ export const AdminPanel: React.FC = () => {
           nextDrafts[device.tag_name] = buildPendingDraft(device, currentDrafts[device.tag_name]);
         });
         return nextDrafts;
+      });
+      setPendingCheckNotes((currentNotes) => {
+        const nextNotes: Record<string, string> = {};
+        nextPendingDevices.forEach((device) => {
+          if (currentNotes[device.tag_name]) {
+            nextNotes[device.tag_name] = currentNotes[device.tag_name];
+          }
+        });
+        return nextNotes;
       });
       setSharePanel((prev) => {
         if (!prev.device) return prev;
@@ -325,6 +340,36 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
+  const handleCheckPendingDevice = async (device: PendingDevice) => {
+    setCheckingTag(device.tag_name);
+    setError('');
+    try {
+      const response = await adminHardwareAPI.checkPendingDevice(device.tag_name);
+      const refreshedDevice = response.data.device as PendingDevice | undefined;
+      const checkSummary = response.data.check_summary || response.data.message || 'Check completed.';
+
+      if (refreshedDevice) {
+        setPendingDevices((prev) => prev.map((item) => (
+          item.tag_name === refreshedDevice.tag_name ? refreshedDevice : item
+        )));
+        setPendingDrafts((prev) => ({
+          ...prev,
+          [refreshedDevice.tag_name]: buildPendingDraft(refreshedDevice, prev[refreshedDevice.tag_name]),
+        }));
+      }
+
+      setPendingCheckNotes((prev) => ({
+        ...prev,
+        [device.tag_name]: checkSummary,
+      }));
+      showSuccess(response.data.message || `Checked ${device.tag_name}.`);
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to check pending device');
+    } finally {
+      setCheckingTag(null);
+    }
+  };
+
   const handleResetDeviceReview = async (device: Device) => {
     if (!window.confirm(`Reset ${device.tag_name} back to Pending Review?`)) return;
 
@@ -417,14 +462,16 @@ export const AdminPanel: React.FC = () => {
               ) : (
                 <div className="pending-review-list">
                   {pendingDevices.map((device) => {
-                    const draft = pendingDrafts[device.tag_name] || buildPendingDraft(device);
-                    const isApproving = approvingTag === device.tag_name;
-                    const isDeleting = deletingTag === device.tag_name;
-                    const metadataItems = [
-                      { label: 'Chip Type', value: device.chip_type },
-                      { label: 'MAC', value: device.mac_address },
-                      { label: 'Flash', value: device.flash_size },
-                      { label: 'Crystal', value: device.crystal_freq },
+                     const draft = pendingDrafts[device.tag_name] || buildPendingDraft(device);
+                     const isApproving = approvingTag === device.tag_name;
+                     const isChecking = checkingTag === device.tag_name;
+                     const isDeleting = deletingTag === device.tag_name;
+                     const metadataItems = [
+                       { label: 'Chip Type', value: device.chip_type },
+                       { label: 'Chip Family', value: device.chip_family },
+                       { label: 'MAC', value: device.mac_address },
+                       { label: 'Flash', value: device.flash_size },
+                       { label: 'Crystal', value: device.crystal_freq },
                     ];
                     return (
                       <div key={device.tag_name} className="pending-review-item">
@@ -446,6 +493,10 @@ export const AdminPanel: React.FC = () => {
                             </div>
                           ))}
                         </div>
+
+                        {pendingCheckNotes[device.tag_name] ? (
+                          <div className="pending-review-check-note">{pendingCheckNotes[device.tag_name]}</div>
+                        ) : null}
 
                         <div className="pending-review-form">
                           <label className="share-form-label">
@@ -475,16 +526,23 @@ export const AdminPanel: React.FC = () => {
 
                           <div className="pending-review-form-actions">
                             <button
+                              className="btn-secondary"
+                              onClick={() => handleCheckPendingDevice(device)}
+                              disabled={isApproving || isChecking || isDeleting}
+                            >
+                              {isChecking ? 'Checking...' : 'Check'}
+                            </button>
+                            <button
                               className="btn-primary"
                               onClick={() => handleApprovePendingDevice(device)}
-                              disabled={isApproving || isDeleting || !draft.boardClass}
+                              disabled={isApproving || isChecking || isDeleting || !draft.boardClass}
                             >
                               {isApproving ? 'Approving...' : 'Confirm & Approve'}
                             </button>
                             <button
                               className="btn-danger"
                               onClick={() => handleDeleteDeviceRecord(device.tag_name)}
-                              disabled={isApproving || isDeleting}
+                              disabled={isApproving || isChecking || isDeleting}
                             >
                               {isDeleting ? 'Deleting...' : 'Delete Record'}
                             </button>

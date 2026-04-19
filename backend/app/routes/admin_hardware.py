@@ -251,6 +251,25 @@ def approve_device(tag_name):
     return jsonify(ok=True, message='Device approved successfully.')
 
 
+@admin_hw_bp.route('/api/admin/devices/<string:tag_name>/check', methods=['POST', 'OPTIONS'])
+def check_pending_device(tag_name):
+    success, result, status_code = hardware_service.check_pending_device(tag_name)
+
+    if success:
+        log_action(
+            session['username'],
+            'Check Pending Device',
+            details={
+                'tag_name': tag_name,
+                'checked_via': result.get('checked_via'),
+                'suggested_board_class': result.get('suggested_board_class'),
+            },
+        )
+        return jsonify(ok=True, **result), status_code
+
+    return jsonify(ok=False, error=result.get('message') or 'Check failed.'), status_code
+
+
 @admin_hw_bp.route('/api/admin/devices/<string:tag_name>/reset-review', methods=['POST', 'OPTIONS'])
 def reset_device_review(tag_name):
     success, message, status_code = hardware_service.reset_device_to_pending_review(tag_name)

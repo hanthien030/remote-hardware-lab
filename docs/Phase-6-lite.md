@@ -339,17 +339,17 @@ Không bịa identity, không bịa auto-detect, không bịa Uno support nếu 
 - [x] Fix `Unread result found`
 - [x] Tăng connect timeout lên 30s
 - [x] Thêm startup reconcile tối thiểu
-- [ ] Retest: cắm/rút sạch, không còn 500
-- [ ] Retest: shutdown/restart clear được stale connected
-- [ ] Non-regression: ESP32/ESP8266 flash + serial vẫn OK
-- [ ] Manual retest Batch 6L-A completed
+- [x] Retest: cắm/rút sạch, không còn 500
+- [x] Retest: shutdown/restart clear được stale connected
+- [x] Non-regression: ESP32/ESP8266 flash + serial vẫn OK
+- [x] Manual retest Batch 6L-A completed
 
 ### Batch 6L-B — Admin Check / Probe assist
-- [ ] Thêm admin endpoint `POST /api/admin/devices/<tag_name>/check`
-- [ ] Thêm nút `Check` trong Pending Review
-- [ ] ESP pending device có thể enrich metadata bằng probe
-- [ ] Uno-like device có thể được gợi ý `arduino_uno`
-- [ ] Admin vẫn sửa tay / approve như cũ
+- [x] Thêm admin endpoint `POST /api/admin/devices/<tag_name>/check`
+- [x] Thêm nút `Check` trong Pending Review
+- [x] ESP pending device có thể enrich metadata bằng probe
+- [x] Uno-like device có thể được gợi ý `arduino_uno`
+- [x] Admin vẫn sửa tay / approve như cũ
 - [ ] Manual retest Batch 6L-B completed
 
 ### Batch 6L-C — Arduino Uno minimal support

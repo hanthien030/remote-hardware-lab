@@ -37,6 +37,21 @@ def _detect_board_class(chip_family):
     return chip_family if chip_family in SUPPORTED_BOARD_CLASSES else None
 
 
+def _normalize_optional_text(value):
+    if value is None:
+        return None
+
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _has_useful_serial_number(serial_number):
+    normalized = _normalize_optional_text(serial_number)
+    if not normalized:
+        return False
+    return normalized.lower() not in {"n/a", "na", "none", "null", "unknown"}
+
+
 def _probe_device(port):
     probe_result = _empty_probe_result()
     broker_endpoint = f"{BROKER_URL}/interrogate"
@@ -390,10 +405,14 @@ def get_device_by_tag(tag_name):
     """Lay thong tin chi tiet cua mot thiet bi bang tag_name."""
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM devices WHERE tag_name = %s", (tag_name,))
-    device = cursor.fetchone()
+    device = _get_device_by_tag_with_cursor(cursor, tag_name)
     cursor.close()
     return device
+
+
+def _get_device_by_tag_with_cursor(cursor, tag_name):
+    cursor.execute("SELECT * FROM devices WHERE tag_name = %s", (tag_name,))
+    return cursor.fetchone()
 
 
 def get_device_by_port(port):
@@ -427,6 +446,104 @@ def _count_active_flash_requests(cursor, tag_name):
     )
     row = cursor.fetchone() or {}
     return int(row.get("active_count") or 0)
+
+
+def check_pending_device(tag_name):
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+
+    try:
+        device = _get_device_by_tag_with_cursor(cursor, tag_name)
+
+        if not device:
+            return False, {"message": "Device not found."}, 404
+        if device.get("review_state") != "pending_review":
+            return False, {"message": "Device is not pending review."}, 409
+
+        current_board_class = device.get("board_class")
+        serial_number = _normalize_optional_text(device.get("serial_number"))
+
+        if _has_useful_serial_number(serial_number):
+            updates = {}
+            suggested_board_class = "arduino_uno"
+            if not current_board_class:
+                updates["board_class"] = "arduino_uno"
+
+            if updates:
+                cursor.execute(
+                    "UPDATE devices SET board_class = %s WHERE tag_name = %s AND review_state = 'pending_review'",
+                    (updates["board_class"], tag_name),
+                )
+                db.commit()
+                device = _get_device_by_tag_with_cursor(cursor, tag_name)
+
+            return True, {
+                "message": "USB serial number found. Suggested Arduino Uno for manual review.",
+                "check_summary": "Suggested Arduino Uno from USB serial number. No ESP probe was run.",
+                "checked_via": "serial_hint",
+                "suggested_board_class": suggested_board_class,
+                "device": device,
+            }, 200
+
+        port = _normalize_optional_text(device.get("port"))
+        if not port:
+            return True, {
+                "message": "Unknown / not supported for auto-detect.",
+                "check_summary": "Unknown / not supported for auto-detect: device has no active port for ESP probe.",
+                "checked_via": "no_port",
+                "suggested_board_class": current_board_class,
+                "device": device,
+            }, 200
+
+        probe_result = _probe_device(port)
+        if not probe_result["probe_success"]:
+            return True, {
+                "message": "Unknown / not supported for auto-detect.",
+                "check_summary": "Unknown / not supported for auto-detect.",
+                "checked_via": "probe_failed",
+                "suggested_board_class": current_board_class,
+                "device": device,
+            }, 200
+
+        detected_board_class = _detect_board_class(probe_result["chip_family"])
+        updates = {}
+        for field_name in ("chip_type", "chip_family", "mac_address", "flash_size", "crystal_freq"):
+            if not device.get(field_name) and probe_result.get(field_name):
+                updates[field_name] = probe_result[field_name]
+        if not current_board_class and detected_board_class:
+            updates["board_class"] = detected_board_class
+
+        if updates:
+            assignments = []
+            for field_name, field_value in updates.items():
+                assignments.append(f"{field_name} = %s")
+            cursor.execute(
+                f"UPDATE devices SET {', '.join(assignments)} WHERE tag_name = %s AND review_state = 'pending_review'",
+                (*updates.values(), tag_name),
+            )
+            db.commit()
+            device = _get_device_by_tag_with_cursor(cursor, tag_name)
+
+        suggested_board_class = device.get("board_class") or detected_board_class
+        if detected_board_class:
+            check_summary = f"ESP probe completed. Suggested {detected_board_class}."
+        elif updates:
+            check_summary = "ESP probe completed. Metadata updated, but board remains Unknown / not supported for auto-detect."
+        else:
+            check_summary = "Unknown / not supported for auto-detect."
+
+        return True, {
+            "message": "Probe check completed.",
+            "check_summary": check_summary,
+            "checked_via": "esp_probe",
+            "suggested_board_class": suggested_board_class,
+            "device": device,
+        }, 200
+    except Exception as e:
+        db.rollback()
+        return False, {"message": str(e)}, 500
+    finally:
+        cursor.close()
 
 
 def reset_device_to_pending_review(tag_name):

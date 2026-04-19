@@ -38,6 +38,9 @@ export const adminHardwareAPI = {
   approveDevice: (tagName: string, data: { device_name?: string | null; board_class: 'esp32' | 'esp8266' | 'arduino_uno' }) =>
     client.post(`/api/admin/devices/${encodeURIComponent(tagName)}/approve`, data),
 
+  checkPendingDevice: (tagName: string) =>
+    client.post(`/api/admin/devices/${encodeURIComponent(tagName)}/check`),
+
   resetDeviceReview: (tagName: string) =>
     client.post(`/api/admin/devices/${encodeURIComponent(tagName)}/reset-review`),
 
