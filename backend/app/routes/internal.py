@@ -140,3 +140,25 @@ def disconnect_hardware():
         print(f'[INTERNAL API ERROR] Exception in disconnect_hardware: {exc}')
         traceback.print_exc()
         return jsonify(ok=False, error=f'Internal server error: {str(exc)}'), 500
+
+
+@internal_bp.route('/api/internal/hardware/reconcile', methods=['POST'])
+def reconcile_hardware():
+    try:
+        data = request.get_json() or {}
+        active_ports = data.get('active_ports')
+
+        if not isinstance(active_ports, list):
+            print("[INTERNAL API] Missing or invalid 'active_ports' in reconcile request")
+            return jsonify(ok=False, error="Missing or invalid 'active_ports' list"), 400
+
+        result = hardware_service.reconcile_connected_devices(active_ports)
+        print(
+            f"[INTERNAL API] Startup reconcile completed: "
+            f"cleared={result['cleared_count']} active_ports={len(active_ports)}"
+        )
+        return jsonify(ok=True, **result), 200
+    except Exception as exc:
+        print(f'[INTERNAL API ERROR] Exception in reconcile_hardware: {exc}')
+        traceback.print_exc()
+        return jsonify(ok=False, error=f'Internal server error: {str(exc)}'), 500

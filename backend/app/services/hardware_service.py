@@ -267,6 +267,53 @@ def handle_device_disconnect(port):
         cursor.close()
 
 
+def reconcile_connected_devices(active_ports):
+    """Clear stale connected rows that no longer map to a live port at startup."""
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    normalized_ports = {str(port).strip() for port in (active_ports or []) if port}
+
+    try:
+        cursor.execute("SELECT id, tag_name, port FROM devices WHERE status = 'connected'")
+        connected_rows = cursor.fetchall()
+
+        stale_ids = []
+        stale_tags = []
+        for row in connected_rows:
+            row_port = (row.get("port") or "").strip()
+            if row_port not in normalized_ports:
+                stale_ids.append(row["id"])
+                stale_tags.append(row["tag_name"])
+
+        if not stale_ids:
+            return {
+                "cleared_count": 0,
+                "cleared_tag_names": [],
+            }
+
+        placeholders = ", ".join(["%s"] * len(stale_ids))
+        cursor.execute(
+            f"""
+            UPDATE devices
+            SET status = 'disconnected',
+                port = NULL
+            WHERE id IN ({placeholders}) AND status = 'connected'
+            """,
+            tuple(stale_ids),
+        )
+        db.commit()
+
+        return {
+            "cleared_count": cursor.rowcount,
+            "cleared_tag_names": stale_tags,
+        }
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
 def get_all_devices():
     """Lay danh sach tat ca thiet bi."""
     db = get_db_connection()
@@ -353,7 +400,16 @@ def get_device_by_port(port):
     """Lay thong tin chi tiet cua mot thiet bi bang port (e.g. /dev/ttyUSB0)."""
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM devices WHERE port = %s", (port,))
+    cursor.execute(
+        """
+        SELECT *
+        FROM devices
+        WHERE port = %s
+        ORDER BY last_seen DESC, id DESC
+        LIMIT 1
+        """,
+        (port,),
+    )
     device = cursor.fetchone()
     cursor.close()
     return device
