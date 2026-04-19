@@ -261,7 +261,7 @@ def enqueue_request(
     if baud_rate not in SUPPORTED_BAUD_RATES:
         raise ValueError('Unsupported baud rate')
 
-        resolved_path = _safe_workspace_file(username, project_name, firmware_path, board_type)
+    resolved_path = _safe_workspace_file(username, project_name, firmware_path, board_type)
     conn = create_db_connection()
     cursor = _dict_cursor(conn)
     user_lock_acquired = False
