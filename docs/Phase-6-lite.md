@@ -350,15 +350,15 @@ Không bịa identity, không bịa auto-detect, không bịa Uno support nếu 
 - [x] ESP pending device có thể enrich metadata bằng probe
 - [x] Uno-like device có thể được gợi ý `arduino_uno`
 - [x] Admin vẫn sửa tay / approve như cũ
-- [ ] Manual retest Batch 6L-B completed
+- [x] Manual retest Batch 6L-B completed
 
 ### Batch 6L-C — Arduino Uno minimal support
-- [ ] Xác nhận compile `.hex` hiện có dùng được hay không
-- [ ] Thêm `avrdude` vào broker nếu cần
-- [ ] Queue validation chấp nhận `.hex` cho `arduino_uno`
-- [ ] Broker có Uno flash path
-- [ ] Worker route `arduino_uno` đúng
-- [ ] Workspace / Flash Dialog cho phép Uno flash
+- [x] Xác nhận compile `.hex` hiện có dùng được hay không
+- [x] Thêm `avrdude` vào broker nếu cần
+- [x] Queue validation chấp nhận `.hex` cho `arduino_uno`
+- [x] Broker có Uno flash path
+- [x] Worker route `arduino_uno` đúng
+- [x] Workspace / Flash Dialog cho phép Uno flash
 - [ ] Serial capture Uno hoạt động
 - [ ] Non-regression: ESP32/ESP8266 không bị ảnh hưởng
 - [ ] Manual retest Batch 6L-C completed
