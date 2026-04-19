@@ -450,15 +450,14 @@ def _process_candidate(request_id: int, tag_name: str):
                 log='Flash completed successfully.',
             )
     except Exception as exc:
+        error_str = str(exc) or f'Unknown error ({type(exc).__name__})'
+        print(f'[FLASH_QUEUE] Request {request_id} failed: {error_str}')
         try:
             current_row = flash_queue_service.get_request_by_id(request_id)
             if current_row:
                 username = current_row['user_id']
-                failure_log = current_row.get('log_output') or ''
-                if failure_log:
-                    failure_log = f'{failure_log}\n{exc}'
-                else:
-                    failure_log = str(exc)
+                existing_log = current_row.get('log_output') or ''
+                failure_log = f'{existing_log}\n{error_str}'.strip() if existing_log else error_str
 
                 finalized = flash_queue_service.finalize_request(
                     request_id=request_id,
@@ -467,6 +466,8 @@ def _process_candidate(request_id: int, tag_name: str):
                     status='failed',
                     log_output=failure_log,
                 )
+                if not finalized:
+                    print(f'[FLASH_QUEUE] finalize_request returned False for {request_id}')
                 if finalized:
                     broadcast_flash_serial_finished(
                         request_id=request_id,
@@ -487,6 +488,8 @@ def _process_candidate(request_id: int, tag_name: str):
                         status='failed',
                         log=str(exc),
                     )
+            else:
+                print(f'[FLASH_QUEUE] Cannot finalize {request_id}: row not found')
         except Exception as finalize_exc:
             print(f'[FLASH_QUEUE] Failed to finalize request {request_id}: {finalize_exc}')
     finally:

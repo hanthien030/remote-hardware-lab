@@ -70,6 +70,8 @@ class FlashLayout(BaseModel):
 FlashRequest.model_rebuild()
 
 _serial_capture_stop_events: Dict[str, threading.Event] = {}
+_serial_capture_done_events: Dict[str, threading.Event] = {}
+_serial_capture_connections: Dict[str, 'serial.Serial'] = {}
 _serial_capture_lock = threading.Lock()
 
 
@@ -247,7 +249,11 @@ def _request_serial_capture_stop(capture_id: str) -> bool:
     return True
 
 
-def _serial_capture_stream(request: SerialCaptureRequest, stop_event: Optional[threading.Event] = None):
+def _serial_capture_stream(
+    request: SerialCaptureRequest,
+    stop_event: Optional[threading.Event] = None,
+    done_event: Optional[threading.Event] = None,
+):
     connection = None
     bytes_captured = 0
 
@@ -267,6 +273,11 @@ def _serial_capture_stream(request: SerialCaptureRequest, stop_event: Optional[t
         connection.rts = False
         connection.reset_input_buffer()
         connection.reset_output_buffer()
+
+        # Register connection so stop handler can force-close if generator stalls
+        if request.capture_id:
+            with _serial_capture_lock:
+                _serial_capture_connections[request.capture_id] = connection
 
         yield json.dumps({
             'type': 'started',
@@ -330,6 +341,12 @@ def _serial_capture_stream(request: SerialCaptureRequest, stop_event: Optional[t
         if connection and connection.is_open:
             connection.close()
         _clear_serial_capture_stop_event(request.capture_id)
+        if request.capture_id:
+            with _serial_capture_lock:
+                _serial_capture_connections.pop(request.capture_id, None)
+                done_ev = _serial_capture_done_events.pop(request.capture_id, None)
+            if done_ev:
+                done_ev.set()
 
 
 @app.get('/healthcheck', tags=['Status'])
@@ -433,9 +450,14 @@ def serial_capture(request: SerialCaptureRequest):
         raise HTTPException(status_code=400, detail='duration_seconds must be positive')
 
     stop_event = _register_serial_capture_stop_event(request.capture_id)
+    done_event = None
+    if request.capture_id:
+        done_event = threading.Event()
+        with _serial_capture_lock:
+            _serial_capture_done_events[request.capture_id] = done_event
 
     return StreamingResponse(
-        _serial_capture_stream(request, stop_event),
+        _serial_capture_stream(request, stop_event, done_event),
         media_type='application/x-ndjson',
     )
 
@@ -443,6 +465,30 @@ def serial_capture(request: SerialCaptureRequest):
 @app.post('/serial-capture/stop', tags=['Device Actions'])
 def stop_serial_capture(request: SerialCaptureStopRequest):
     active_capture_found = _request_serial_capture_stop(request.capture_id)
+
+    if active_capture_found:
+        with _serial_capture_lock:
+            done_ev = _serial_capture_done_events.get(request.capture_id)
+
+        closed_naturally = False
+        if done_ev:
+            # Wait briefly for generator to close port naturally (via finally block)
+            # Serial read timeout = 0.5s → normally done in < 1s
+            closed_naturally = done_ev.wait(timeout=1.0)
+
+        if not closed_naturally:
+            # Generator's finally did not run in time (Starlette may not have called
+            # aclose() after client disconnect). Force-close the serial port directly.
+            with _serial_capture_lock:
+                conn = _serial_capture_connections.pop(request.capture_id, None)
+                _serial_capture_done_events.pop(request.capture_id, None)
+            if conn:
+                try:
+                    if conn.is_open:
+                        conn.close()
+                except Exception as exc:
+                    print(f'[BROKER] Force-close serial connection {request.capture_id}: {exc}')
+
     return {
         'status': 'ok',
         'capture_id': request.capture_id,
