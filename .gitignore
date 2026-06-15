@@ -61,3 +61,5 @@ build/
 *.bin
 *.elf
 *.hex
+
+docs/
